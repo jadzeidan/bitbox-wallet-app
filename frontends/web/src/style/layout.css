@@ -256,7 +256,7 @@
 }
 
 .box.slim.divide > *:not(:first-child) {
-    border-top: solid 1px var(--color-lightgray);
+    border-top: solid 1px var(--background);
 }
 
 .box .buttons {

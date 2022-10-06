@@ -152,16 +152,16 @@ class Chart extends Component<Props, State> {
               visible: false,
             },
             horzLines: {
-              color: '#dedede',
+              color: '#333333',
               style: LineStyle.Solid,
               visible: true,
             },
           },
           layout: {
-            backgroundColor: '#F5F5F5',
+            backgroundColor: '#1D1D1B',
             fontSize: 11,
             fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", "Ubuntu", "Roboto", "Oxygen", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif',
-            textColor: '#1D1D1B',
+            textColor: '#777777',
           },
           leftPriceScale: {
             borderVisible: false,

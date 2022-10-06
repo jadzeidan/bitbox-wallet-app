@@ -31,7 +31,7 @@
     width: 100%;
     border-collapse: collapse;
     margin-bottom: var(--spacing-default);
-    border: solid 1px var(--color-mediumgray);
+    border: solid 1px var(--background);
 }
 
 .table tr td,
@@ -52,7 +52,7 @@
 }
 
 .table thead th {
-    border-bottom: solid 1px var(--color-mediumgray);
+    border-bottom: solid 1px var(--background);
 }
 
 .table thead th,

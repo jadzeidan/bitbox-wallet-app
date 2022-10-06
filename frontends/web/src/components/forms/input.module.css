@@ -50,7 +50,7 @@
 
 .input input[disabled] {
     background-color: var(--background-secondary) !important;
-    border-color: var(--color-lightgray) !important;
+    border-color: var(--background) !important;
     color: var(--color-secondary) !important;
     cursor: not-allowed;
 }

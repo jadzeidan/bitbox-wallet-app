@@ -21,7 +21,7 @@
     --color-lightorange: #F9AC60;
 
     /* font colors */
-    --color-default: var(--color-dark);
+    --color-default: var(--color-white);
     --color-primary: var(--color-blue);
     --color-secondary: var(--color-gray);
     --color-light: var(--color-mediumgray);
@@ -33,12 +33,12 @@
     --color-warning: var(--color-softred);
     --color-error: var(--color-swissred);
     --color-danger: var(--color-error);
-    --color-disabled: var(--color-mediumgray);
+    --color-disabled: var(--color-gray);
 
     /* background colors */
-    --background: var(--color-lightgray);
+    --background: var(--color-dark);
     --bg-transparent-dark: rgba(0, 0, 0, 0.4);
-    --background-secondary: var(--color-white);
+    --background-secondary: var(--color-softblack);
     --background-dark: var(--color-softblack);
 
     /* font sizes */
