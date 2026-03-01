@@ -261,3 +261,100 @@ func (c *RPCClient) SendTransaction(ctx context.Context, tx []byte) (string, err
 	}
 	return signature, nil
 }
+
+// SignatureInfo is a subset of getSignaturesForAddress results.
+type SignatureInfo struct {
+	Signature          string `json:"signature"`
+	Slot               uint64 `json:"slot"`
+	BlockTime          *int64 `json:"blockTime"`
+	ConfirmationStatus string `json:"confirmationStatus"`
+	Err                *struct {
+	} `json:"err,omitempty"`
+}
+
+// TransactionInfo is a subset of getTransaction results.
+type TransactionInfo struct {
+	Slot      uint64 `json:"slot"`
+	BlockTime *int64 `json:"blockTime"`
+	Meta      struct {
+		Err         *struct{} `json:"err,omitempty"`
+		Fee         uint64    `json:"fee"`
+		PreBalances []uint64  `json:"preBalances"`
+		PostBalances []uint64 `json:"postBalances"`
+	} `json:"meta"`
+	Transaction struct {
+		Message struct {
+			AccountKeys  []transactionAccountKey `json:"accountKeys"`
+			Instructions []transactionInstruction `json:"instructions"`
+		} `json:"message"`
+		Signatures []string `json:"signatures"`
+	} `json:"transaction"`
+}
+
+type transactionAccountKey struct {
+	Pubkey string
+}
+
+func (k *transactionAccountKey) UnmarshalJSON(data []byte) error {
+	// "json" encoding: account key is a string.
+	var asString string
+	if err := json.Unmarshal(data, &asString); err == nil {
+		k.Pubkey = asString
+		return nil
+	}
+	// "jsonParsed" encoding: account key is an object with a pubkey field.
+	var asObject struct {
+		Pubkey string `json:"pubkey"`
+	}
+	if err := json.Unmarshal(data, &asObject); err != nil {
+		return err
+	}
+	k.Pubkey = asObject.Pubkey
+	return nil
+}
+
+type parsedInstruction struct {
+	Type string                 `json:"type"`
+	Info map[string]interface{} `json:"info"`
+}
+
+type transactionInstruction struct {
+	Program string             `json:"program"`
+	Parsed  *parsedInstruction `json:"parsed,omitempty"`
+}
+
+func (c *RPCClient) GetSignaturesForAddress(
+	ctx context.Context,
+	address string,
+	limit int,
+) ([]SignatureInfo, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	var out []SignatureInfo
+	if err := c.call(ctx, "getSignaturesForAddress", []interface{}{
+		address,
+		map[string]interface{}{
+			"limit":      limit,
+			"commitment": "confirmed",
+		},
+	}, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *RPCClient) GetTransaction(ctx context.Context, signature string) (*TransactionInfo, error) {
+	var out *TransactionInfo
+	if err := c.call(ctx, "getTransaction", []interface{}{
+		signature,
+		map[string]interface{}{
+			"encoding":                     "jsonParsed",
+			"maxSupportedTransactionVersion": 0,
+			"commitment":                   "confirmed",
+		},
+	}, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}

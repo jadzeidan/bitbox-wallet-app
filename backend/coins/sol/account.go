@@ -5,12 +5,15 @@ package sol
 import (
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"os"
 	"path"
 	"strconv"
+	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/accounts"
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/accounts/errors"
@@ -25,6 +28,8 @@ import (
 )
 
 const defaultFeeLamports uint64 = 5000
+
+const systemProgramAddress = "11111111111111111111111111111111"
 
 // TxProposal contains all data needed to sign and send a Solana transaction.
 type TxProposal struct {
@@ -52,6 +57,10 @@ type Account struct {
 
 	balance          coinpkg.Amount
 	activeTxProposal *TxProposal
+
+	txCacheMu sync.Mutex
+	txCache   accounts.OrderedTransactions
+	txCacheAt time.Time
 }
 
 func NewAccount(config *accounts.AccountConfig, accountCoin *Coin, log *logrus.Entry) *Account {
@@ -154,7 +163,223 @@ func (account *Account) Transactions() (accounts.OrderedTransactions, error) {
 	if !account.Synced() {
 		return nil, accounts.ErrSyncInProgress
 	}
-	return accounts.NewOrderedTransactions(nil), nil
+	// Keep a short cache to avoid excessive RPC calls when the UI refreshes multiple endpoints.
+	const txCacheTTL = 10 * time.Second
+	account.txCacheMu.Lock()
+	if time.Since(account.txCacheAt) < txCacheTTL && account.txCache != nil {
+		cached := account.txCache
+		account.txCacheMu.Unlock()
+		return cached, nil
+	}
+	account.txCacheMu.Unlock()
+
+	const limit = 50
+	signatures, err := account.coin.Client().GetSignaturesForAddress(context.TODO(), account.address.address, limit)
+	if err != nil {
+		account.SetOffline(err)
+		return nil, err
+	}
+	account.SetOffline(nil)
+
+	txs := make([]*accounts.TransactionData, 0, len(signatures))
+	for _, sig := range signatures {
+		if sig.Signature == "" {
+			continue
+		}
+		txInfo, err := account.coin.Client().GetTransaction(context.TODO(), sig.Signature)
+		if err != nil {
+			// Skip individual tx lookup failures to avoid dropping the whole history on partial RPC errors.
+			account.log.WithError(err).Warn("getTransaction failed")
+			continue
+		}
+		if txInfo == nil {
+			continue
+		}
+		tx := account.txDataFromRPC(sig, txInfo)
+		if tx == nil {
+			continue
+		}
+		txs = append(txs, tx)
+	}
+
+	ordered := accounts.NewOrderedTransactions(txs)
+	account.txCacheMu.Lock()
+	account.txCache = ordered
+	account.txCacheAt = time.Now()
+	account.txCacheMu.Unlock()
+	return ordered, nil
+}
+
+func (account *Account) txDataFromRPC(sig SignatureInfo, txInfo *TransactionInfo) *accounts.TransactionData {
+	keys := txInfo.Transaction.Message.AccountKeys
+	var ourIndex = -1
+	for i, key := range keys {
+		if key.Pubkey == account.address.address {
+			ourIndex = i
+			break
+		}
+	}
+	if ourIndex < 0 {
+		return nil
+	}
+	if ourIndex >= len(txInfo.Meta.PreBalances) || ourIndex >= len(txInfo.Meta.PostBalances) {
+		return nil
+	}
+	pre := txInfo.Meta.PreBalances[ourIndex]
+	post := txInfo.Meta.PostBalances[ourIndex]
+	var delta int64 = int64(post) - int64(pre)
+
+	var status accounts.TxStatus
+	// Prefer detailed tx meta error, fallback to signature status if unavailable.
+	switch {
+	case txInfo.Meta.Err != nil || sig.Err != nil:
+		status = accounts.TxStatusFailed
+	case sig.ConfirmationStatus == "processed":
+		status = accounts.TxStatusPending
+	default:
+		status = accounts.TxStatusComplete
+	}
+
+	var txType accounts.TxType
+	feeAmount := coinpkg.NewAmount(new(big.Int).SetUint64(txInfo.Meta.Fee))
+	feePtr := &feeAmount
+	amountU64 := uint64(0)
+	switch {
+	case delta > 0:
+		txType = accounts.TxTypeReceive
+		feePtr = nil
+		amountU64 = uint64(delta)
+	case delta < 0:
+		outgoing := uint64(-delta)
+		if outgoing <= txInfo.Meta.Fee {
+			txType = accounts.TxTypeSendSelf
+			amountU64 = 0
+		} else {
+			txType = accounts.TxTypeSend
+			amountU64 = outgoing - txInfo.Meta.Fee
+		}
+	default:
+		// No balance change for this address; skip to reduce noisy tx entries.
+		return nil
+	}
+
+	amount := coinpkg.NewAmount(new(big.Int).SetUint64(amountU64))
+	var timestamp *time.Time
+	if txInfo.BlockTime != nil {
+		t := time.Unix(*txInfo.BlockTime, 0).UTC()
+		timestamp = &t
+	} else if sig.BlockTime != nil {
+		t := time.Unix(*sig.BlockTime, 0).UTC()
+		timestamp = &t
+	}
+
+	numConfirmations := 0
+	if status != accounts.TxStatusPending {
+		numConfirmations = 1
+	}
+
+	txID := sig.Signature
+	if txID == "" && len(txInfo.Transaction.Signatures) > 0 {
+		txID = txInfo.Transaction.Signatures[0]
+	}
+	if txID == "" {
+		return nil
+	}
+
+	tx := &accounts.TransactionData{
+		Fee:                      feePtr,
+		Timestamp:                timestamp,
+		TxID:                     txID,
+		InternalID:               txID,
+		Height:                   int(txInfo.Slot),
+		NumConfirmations:         numConfirmations,
+		NumConfirmationsComplete: 1,
+		Status:                   status,
+		Type:                     txType,
+		Amount:                   amount,
+	}
+
+	displayAddress := account.address.address
+	if txType != accounts.TxTypeReceive {
+		displayAddress = account.counterpartyAddress(txInfo, txType)
+		if displayAddress == "" {
+			displayAddress = account.address.address
+		}
+	}
+	ours := displayAddress == account.address.address
+	tx.Addresses = []accounts.AddressAndAmount{{
+		Address: displayAddress,
+		Amount:  amount,
+		Ours:    ours,
+	}}
+	return tx
+}
+
+func (account *Account) counterpartyAddress(txInfo *TransactionInfo, txType accounts.TxType) string {
+	our := account.address.address
+	for _, instruction := range txInfo.Transaction.Message.Instructions {
+		if instruction.Parsed == nil {
+			continue
+		}
+		if instruction.Program != "system" {
+			continue
+		}
+		if instruction.Parsed.Type != "transfer" && instruction.Parsed.Type != "transferWithSeed" {
+			continue
+		}
+
+		source, _ := infoString(instruction.Parsed.Info, "source")
+		destination, _ := infoString(instruction.Parsed.Info, "destination")
+		if source == "" && destination == "" {
+			continue
+		}
+		switch txType {
+		case accounts.TxTypeSend:
+			if source == our && destination != "" {
+				return destination
+			}
+		case accounts.TxTypeReceive:
+			if destination == our && source != "" {
+				return source
+			}
+		case accounts.TxTypeSendSelf:
+			if source == our && destination != "" {
+				return destination
+			}
+		}
+	}
+
+	// Fallback when parsed instructions are absent/incomplete.
+	for _, key := range txInfo.Transaction.Message.AccountKeys {
+		pubkey := key.Pubkey
+		if pubkey == "" || pubkey == our || pubkey == systemProgramAddress {
+			continue
+		}
+		return pubkey
+	}
+	return ""
+}
+
+func infoString(info map[string]interface{}, key string) (string, bool) {
+	value, ok := info[key]
+	if !ok {
+		return "", false
+	}
+	switch typed := value.(type) {
+	case string:
+		return typed, true
+	default:
+		// Defensive fallback in case the RPC gives a typed JSON value.
+		bytes, err := json.Marshal(typed)
+		if err != nil {
+			return "", false
+		}
+		var result string
+		if err := json.Unmarshal(bytes, &result); err != nil {
+			return "", false
+		}
+		return result, true
+	}
 }
 
 // Balance implements accounts.Interface.
@@ -337,6 +562,10 @@ func (account *Account) SendTx(string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	account.txCacheMu.Lock()
+	account.txCache = nil
+	account.txCacheAt = time.Time{}
+	account.txCacheMu.Unlock()
 	account.Notify(observable.Event{Subject: string(accountsTypes.EventStatusChanged), Action: action.Reload, Object: nil})
 	account.activeTxProposal = nil
 	return txID, nil
