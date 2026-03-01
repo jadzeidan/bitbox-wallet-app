@@ -59,6 +59,8 @@ osx:
 	qmake -set MACOS_MIN_VERSION $(MACOS_MIN_VERSION)
 	# See https://stackoverflow.com/questions/77136519/qmake-failing-with-sdk-14-ventura-13-5-2
 	qmake -early QMAKE_DEFAULT_LIBDIRS=$(shell xcrun -show-sdk-path)/usr/lib -o build/Makefile
+	# Newer macOS SDKs no longer expose AGL; strip it from generated linker flags.
+	perl -pi -e 's/ -framework AGL//g' build/Makefile
 	cd build && $(MAKE)
 	mkdir build/osx
 	mv build/BitBox.app build/osx/

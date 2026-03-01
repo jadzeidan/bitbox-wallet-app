@@ -73,12 +73,56 @@ type EthereumSimple struct {
 	KeyInfo KeyInfo `json:"keyInfo"`
 }
 
+// SolanaKeyInfo contains Solana key info.
+type SolanaKeyInfo struct {
+	RootFingerprint []byte
+	AbsoluteKeypath AbsoluteKeypath
+	PublicKey       string
+}
+
+type solanaKeyInfoEncoding struct {
+	RootFingerprint string          `json:"rootFingerprint"`
+	Keypath         AbsoluteKeypath `json:"keypath"`
+	PublicKey       string          `json:"publicKey"`
+}
+
+// MarshalJSON implements json.Marshaler.
+func (ki SolanaKeyInfo) MarshalJSON() ([]byte, error) {
+	return json.Marshal(solanaKeyInfoEncoding{
+		RootFingerprint: hex.EncodeToString(ki.RootFingerprint),
+		Keypath:         ki.AbsoluteKeypath,
+		PublicKey:       ki.PublicKey,
+	})
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (ki *SolanaKeyInfo) UnmarshalJSON(bytes []byte) error {
+	var encoding solanaKeyInfoEncoding
+	if err := json.Unmarshal(bytes, &encoding); err != nil {
+		return errp.Wrap(err, "Could not unmarshal SolanaKeyInfo")
+	}
+	rootFingerprint, err := hex.DecodeString(encoding.RootFingerprint)
+	if err != nil {
+		return errp.WithStack(err)
+	}
+	ki.RootFingerprint = rootFingerprint
+	ki.AbsoluteKeypath = encoding.Keypath
+	ki.PublicKey = encoding.PublicKey
+	return nil
+}
+
+// SolanaSimple represents a simple Solana signing configuration.
+type SolanaSimple struct {
+	KeyInfo SolanaKeyInfo `json:"keyInfo"`
+}
+
 // Configuration models a signing configuration.
 type Configuration struct {
 	// Poor man's union type: only one of the below can be non-nil.
 
 	BitcoinSimple  *BitcoinSimple  `json:"bitcoinSimple,omitempty"`
 	EthereumSimple *EthereumSimple `json:"ethereumSimple,omitempty"`
+	SolanaSimple   *SolanaSimple   `json:"solanaSimple,omitempty"`
 }
 
 // NewBitcoinConfiguration creates a new configuration.
@@ -123,6 +167,23 @@ func NewEthereumConfiguration(
 	}
 }
 
+// NewSolanaConfiguration creates a new Solana configuration.
+func NewSolanaConfiguration(
+	rootFingerprint []byte,
+	absoluteKeypath AbsoluteKeypath,
+	publicKey string,
+) *Configuration {
+	return &Configuration{
+		SolanaSimple: &SolanaSimple{
+			KeyInfo: SolanaKeyInfo{
+				RootFingerprint: rootFingerprint,
+				AbsoluteKeypath: absoluteKeypath,
+				PublicKey:       publicKey,
+			},
+		},
+	}
+}
+
 // ScriptType returns the configuration's keypath.
 func (configuration *Configuration) ScriptType() ScriptType {
 	return configuration.BitcoinSimple.ScriptType
@@ -133,7 +194,10 @@ func (configuration *Configuration) AbsoluteKeypath() AbsoluteKeypath {
 	if configuration.BitcoinSimple != nil {
 		return configuration.BitcoinSimple.KeyInfo.AbsoluteKeypath
 	}
-	return configuration.EthereumSimple.KeyInfo.AbsoluteKeypath
+	if configuration.EthereumSimple != nil {
+		return configuration.EthereumSimple.KeyInfo.AbsoluteKeypath
+	}
+	return configuration.SolanaSimple.KeyInfo.AbsoluteKeypath
 }
 
 // ExtendedPublicKey returns the configuration's extended public key.
@@ -141,7 +205,10 @@ func (configuration *Configuration) ExtendedPublicKey() *hdkeychain.ExtendedKey 
 	if configuration.BitcoinSimple != nil {
 		return configuration.BitcoinSimple.KeyInfo.ExtendedPublicKey
 	}
-	return configuration.EthereumSimple.KeyInfo.ExtendedPublicKey
+	if configuration.EthereumSimple != nil {
+		return configuration.EthereumSimple.KeyInfo.ExtendedPublicKey
+	}
+	return nil
 }
 
 // AccountNumber returns the account number as present in the BIP44 keypath.
@@ -164,6 +231,13 @@ func (configuration *Configuration) AccountNumber() (uint16, error) {
 		}
 		return uint16(keypath[4]), nil
 	}
+	if configuration.SolanaSimple != nil {
+		keypath := configuration.SolanaSimple.KeyInfo.AbsoluteKeypath.ToUInt32()
+		if len(keypath) != 4 || keypath[2] < hdkeychain.HardenedKeyStart {
+			return 0, errp.Newf("unexpected solana keypath: %v", keypath)
+		}
+		return uint16(keypath[2] - hdkeychain.HardenedKeyStart), nil
+	}
 	return 0, errp.New("unknown signing configuration type")
 }
 
@@ -182,7 +256,10 @@ func (configuration *Configuration) String() string {
 		return fmt.Sprintf("bitcoinSimple;scriptType=%s;%s",
 			configuration.BitcoinSimple.ScriptType, configuration.BitcoinSimple.KeyInfo)
 	}
-	return fmt.Sprintf("ethereumSimple;%s", configuration.EthereumSimple.KeyInfo)
+	if configuration.EthereumSimple != nil {
+		return fmt.Sprintf("ethereumSimple;%s", configuration.EthereumSimple.KeyInfo)
+	}
+	return fmt.Sprintf("solanaSimple;keypath=%s", configuration.SolanaSimple.KeyInfo.AbsoluteKeypath.Encode())
 }
 
 // Configurations is an unordered collection of configurations. All entries must have the same root
@@ -209,6 +286,9 @@ func (configs Configurations) RootFingerprint() ([]byte, error) {
 		if config.EthereumSimple != nil {
 			return config.EthereumSimple.KeyInfo.RootFingerprint, nil
 		}
+		if config.SolanaSimple != nil {
+			return config.SolanaSimple.KeyInfo.RootFingerprint, nil
+		}
 	}
 	return nil, errp.New("Could not retrieve fingerprint from signing configurations")
 }
@@ -223,6 +303,11 @@ func (configs Configurations) ContainsRootFingerprint(rootFingerprint []byte) bo
 		}
 		if config.EthereumSimple != nil {
 			if bytes.Equal(config.EthereumSimple.KeyInfo.RootFingerprint, rootFingerprint) {
+				return true
+			}
+		}
+		if config.SolanaSimple != nil {
+			if bytes.Equal(config.SolanaSimple.KeyInfo.RootFingerprint, rootFingerprint) {
 				return true
 			}
 		}

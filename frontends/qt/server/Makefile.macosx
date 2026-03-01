@@ -4,7 +4,7 @@ include ../../../version.mk.inc
 CGO=1
 BUILDMODE=c-shared
 GOOS=darwin
-GOTOOLCHAIN=local
+GOTOOLCHAIN?=auto
 
 darwin:
 	CGO_CFLAGS="-g ${GODARWINSECFLAGS} ${CFLAGS}" \

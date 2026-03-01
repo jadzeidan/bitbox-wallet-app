@@ -86,6 +86,10 @@ type Keystore interface {
 	// Please note that this is only supported if the keystore has a secure output channel.
 	VerifyAddressETH(*signing.Configuration, coin.Coin) error
 
+	// SOLAddress returns a Solana address at the given keypath. If display is true, the address is
+	// shown on the keystore secure display if supported.
+	SOLAddress(keypath signing.AbsoluteKeypath, display bool) (string, error)
+
 	// CanVerifyExtendedPublicKey returns whether the keystore supports to output an xpub/zpub/tbup/ypub securely.
 	CanVerifyExtendedPublicKey() bool
 

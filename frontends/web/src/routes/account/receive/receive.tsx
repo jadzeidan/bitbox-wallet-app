@@ -191,6 +191,8 @@ export const Receive = ({
       uriPrefix = 'bitcoin:';
     } else if (account.coinCode === 'ltc' || account.coinCode === 'tltc') {
       uriPrefix = 'litecoin:';
+    } else if (account.coinCode === 'sol' || account.coinCode === 'tsol') {
+      uriPrefix = 'solana:';
     }
   }
 

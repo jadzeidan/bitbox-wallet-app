@@ -42,11 +42,18 @@ const (
 	ETHTransactionsSourceNone ETHTransactionsSource = "none"
 	// ETHTransactionsSourceEtherScan configures to get transactions from EtherScan.
 	ETHTransactionsSourceEtherScan ETHTransactionsSource = "etherScan"
+	solMainnetRPC                = "https://mainnet.helius-rpc.com/?api-key=c37e08b1-1d02-4e27-8a05-330702c1f2e8"
+	solDevnetRPC                 = "https://devnet.helius-rpc.com/?api-key=c37e08b1-1d02-4e27-8a05-330702c1f2e8"
 )
 
 // ethCoinConfig holds configurations for ethereum coins.
 type ethCoinConfig struct {
 	DeprecatedActiveERC20Tokens []string `json:"activeERC20Tokens"`
+}
+
+type solCoinConfig struct {
+	RPCURL string `json:"rpcURL"`
+	APIKey string `json:"apiKey"`
 }
 
 type proxyConfig struct {
@@ -61,6 +68,7 @@ type Backend struct {
 	DeprecatedBitcoinActive  bool `json:"bitcoinActive"`
 	DeprecatedLitecoinActive bool `json:"litecoinActive"`
 	DeprecatedEthereumActive bool `json:"ethereumActive"`
+	DeprecatedSolanaActive   bool `json:"solanaActive"`
 
 	Authentication bool `json:"authentication"`
 
@@ -70,6 +78,8 @@ type Backend struct {
 	LTC  btcCoinConfig `json:"ltc"`
 	TLTC btcCoinConfig `json:"tltc"`
 	ETH  ethCoinConfig `json:"eth"`
+	SOL  solCoinConfig `json:"sol"`
+	TSOL solCoinConfig `json:"tsol"`
 
 	// Removed in v4.35 - don't reuse these two keys.
 	TETH struct{} `json:"teth"`
@@ -111,6 +121,8 @@ func (backend Backend) DeprecatedCoinActive(code coin.Code) bool {
 		return backend.DeprecatedLitecoinActive
 	case coin.CodeETH, coin.CodeSEPETH:
 		return backend.DeprecatedEthereumActive
+	case coin.CodeSOL, coin.CodeTSOL:
+		return backend.DeprecatedSolanaActive
 	default:
 		panic(fmt.Sprintf("unknown code %s", code))
 	}
@@ -150,6 +162,7 @@ func NewDefaultAppConfig() AppConfig {
 			DeprecatedBitcoinActive:  true,
 			DeprecatedLitecoinActive: true,
 			DeprecatedEthereumActive: true,
+			DeprecatedSolanaActive:   true,
 
 			BTC: btcCoinConfig{
 				ElectrumServers: []*ServerInfo{
@@ -224,6 +237,14 @@ func NewDefaultAppConfig() AppConfig {
 			ETH: ethCoinConfig{
 				DeprecatedActiveERC20Tokens: []string{},
 			},
+			SOL: solCoinConfig{
+				RPCURL: solMainnetRPC,
+				APIKey: "",
+			},
+			TSOL: solCoinConfig{
+				RPCURL: solDevnetRPC,
+				APIKey: "",
+			},
 			// Copied from frontend/web/src/components/rates/rates.tsx.
 			FiatList: []string{rates.USD.String(), rates.EUR.String(), rates.CHF.String()},
 			MainFiat: rates.USD.String(),
@@ -259,6 +280,7 @@ func NewConfig(appConfigFilename string, accountsConfigFilename string) (*Config
 	migrateFiatList(&appconf)
 	migrateFiatCode(&appconf)
 	migrateElectrumX(&appconf)
+	migrateSolanaRPC(&appconf)
 	migrateUserLanguage(&appconf)
 	if err := config.SetAppConfig(appconf); err != nil {
 		return nil, errp.WithStack(err)
@@ -444,4 +466,12 @@ func migrateUserLanguage(appconf *AppConfig) {
 		appconf.Backend.UserLanguage = lang
 		delete(frontconf, "userLanguage")
 	}
+}
+
+// migrateSolanaRPC enforces Helius endpoints and URL-based API keys for SOL/TSOL.
+func migrateSolanaRPC(appconf *AppConfig) {
+	appconf.Backend.SOL.RPCURL = solMainnetRPC
+	appconf.Backend.SOL.APIKey = ""
+	appconf.Backend.TSOL.RPCURL = solDevnetRPC
+	appconf.Backend.TSOL.APIKey = ""
 }

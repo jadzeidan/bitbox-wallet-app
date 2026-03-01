@@ -43,11 +43,13 @@ var (
 		"btc": "bitcoin",
 		"ltc": "litecoin",
 		"eth": "ethereum",
+		"sol": "solana",
 		// Useful for testing with testnets.
 		"tbtc":   "bitcoin",
 		"rbtc":   "bitcoin",
 		"tltc":   "litecoin",
 		"sepeth": "ethereum",
+		"tsol":   "solana",
 		// ERC20 tokens as used in the backend.
 		// Frontend and app config use unprefixed name, without "eth-erc20-".
 		"eth-erc20-bat":       "basic-attention-token",
@@ -67,6 +69,7 @@ var (
 		"bitcoin":  "BTC",
 		"litecoin": "LTC",
 		"ethereum": "ETH",
+		"solana":   "SOL",
 		// ERC20 tokens as used in the backend.
 		"basic-attention-token": "BAT",
 		"dai":                   "DAI",

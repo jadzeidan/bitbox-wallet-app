@@ -7,7 +7,7 @@ import type { SuccessResponse } from './response';
 import type { NonEmptyArray } from '@/utils/types';
 import { apiGet, apiPost } from '@/utils/request';
 
-export type NativeCoinCode = 'btc' | 'tbtc' | 'rbtc' | 'ltc' | 'tltc' | 'eth' | 'sepeth';
+export type NativeCoinCode = 'btc' | 'tbtc' | 'rbtc' | 'ltc' | 'tltc' | 'eth' | 'sepeth' | 'sol' | 'tsol';
 
 export type AccountCode = string;
 
@@ -15,7 +15,7 @@ export type Fiat = 'AUD' | 'BRL' | 'BTC' | 'CAD' | 'CHF' | 'CNY' | 'CZK' | 'EUR'
 
 export type ConversionUnit = Fiat | 'sat';
 
-export type CoinUnit = 'BTC' | 'sat' | 'LTC' | 'ETH' | 'TBTC' | 'RBTC' | 'tsat' | 'TLTC' | 'SEPETH';
+export type CoinUnit = 'BTC' | 'sat' | 'LTC' | 'ETH' | 'TBTC' | 'RBTC' | 'tsat' | 'TLTC' | 'SEPETH' | 'SOL' | 'TSOL';
 
 export type ERC20TokenUnit = 'USDT' | 'USDC' | 'LINK' | 'BAT' | 'MKR' | 'ZRX' | 'WBTC' | 'PAXG' | 'DAI';
 
@@ -141,12 +141,28 @@ export type TEthereumSimple = {
   keyInfo: TKeyInfo;
 };
 
+export type TSolanaKeyInfo = {
+  keypath: string;
+  rootFingerprint: string;
+  publicKey: string;
+};
+
+export type TSolanaSimple = {
+  keyInfo: TSolanaKeyInfo;
+};
+
 export type TSigningConfiguration = {
   bitcoinSimple: TBitcoinSimple;
   ethereumSimple?: never;
+  solanaSimple?: never;
 } | {
   bitcoinSimple?: never;
   ethereumSimple: TEthereumSimple;
+  solanaSimple?: never;
+} | {
+  bitcoinSimple?: never;
+  ethereumSimple?: never;
+  solanaSimple: TSolanaSimple;
 };
 
 export type TSigningConfigurationList = null | {

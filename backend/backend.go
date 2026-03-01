@@ -28,6 +28,7 @@ import (
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/coins/eth"
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/coins/eth/etherscan"
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/coins/ltc"
+	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/coins/sol"
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/config"
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/devices/bitbox"
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/devices/bitbox02"
@@ -73,6 +74,8 @@ var fixedURLWhitelist = []string{
 	"https://blockchair.com/litecoin/transaction/",
 	"https://etherscan.io/tx/",
 	"https://sepolia.etherscan.io/tx/",
+	"https://solscan.io/tx/",
+	"https://solscan.io/tx/?cluster=devnet&tx=",
 	// Moonpay onramp
 	"https://www.moonpay.com/",
 	"https://support.moonpay.com/",
@@ -547,6 +550,34 @@ func (backend *Backend) Coin(code coinpkg.Code) (coinpkg.Coin, error) {
 			"https://sepolia.etherscan.io/tx/",
 			etherScan,
 			nil)
+	case code == coinpkg.CodeSOL:
+		rpcClient := sol.NewRPCClient(
+			backend.config.AppConfig().Backend.SOL.RPCURL,
+			backend.config.AppConfig().Backend.SOL.APIKey,
+			backend.httpClient,
+		)
+		coin = sol.NewCoin(
+			rpcClient,
+			coinpkg.CodeSOL,
+			"Solana",
+			"SOL",
+			"SOL",
+			"https://solscan.io/tx/",
+		)
+	case code == coinpkg.CodeTSOL:
+		rpcClient := sol.NewRPCClient(
+			backend.config.AppConfig().Backend.TSOL.RPCURL,
+			backend.config.AppConfig().Backend.TSOL.APIKey,
+			backend.httpClient,
+		)
+		coin = sol.NewCoin(
+			rpcClient,
+			coinpkg.CodeTSOL,
+			"Solana Devnet",
+			"TSOL",
+			"TSOL",
+			"https://solscan.io/tx/?cluster=devnet&tx=",
+		)
 	case erc20Token != nil:
 		etherScan := etherscan.NewEtherScan("1", backend.httpClient, backend.etherScanRateLimiter)
 		coin = eth.NewCoin(etherScan, erc20Token.code, erc20Token.name, erc20Token.unit, "ETH", params.MainnetChainConfig,

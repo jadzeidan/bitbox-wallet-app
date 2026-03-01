@@ -942,6 +942,8 @@ func (handlers *Handlers) getConvertFromFiat(r *http.Request) interface{} {
 		unit = unit[1:]
 	case "SEPETH":
 		unit = unit[3:]
+	case "TSOL":
+		unit = unit[1:]
 	}
 
 	rate := handlers.backend.RatesUpdater().LatestPrice()[unit][from]

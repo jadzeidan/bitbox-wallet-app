@@ -3,7 +3,7 @@
 import { useState, ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { AccountCode, TAccount, TBitcoinSimple, TEthereumSimple, TSigningConfiguration, verifyXPub } from '@/api/account';
+import { AccountCode, TAccount, TBitcoinSimple, TEthereumSimple, TSigningConfiguration, TSolanaSimple, verifyXPub } from '@/api/account';
 import { getScriptName, isBitcoinBased } from '@/routes/account/utils';
 import { alertUser } from '@/components/alert/Alert';
 import { CopyableInput } from '@/components/copy/Copy';
@@ -24,21 +24,25 @@ export const SigningConfiguration = ({ account, info, code, signingConfigIndex, 
   const { t } = useTranslation();
   const [verifying, setVerifying] = useState(false);
 
-  const getSimpleInfo = (): TBitcoinSimple | TEthereumSimple => {
+  const getSimpleInfo = (): TBitcoinSimple | TEthereumSimple | TSolanaSimple => {
     if (info.bitcoinSimple !== undefined) {
       return info.bitcoinSimple;
     }
-    return info.ethereumSimple;
+    if (info.ethereumSimple !== undefined) {
+      return info.ethereumSimple;
+    }
+    return info.solanaSimple;
   };
 
   const config = getSimpleInfo();
   const bitcoinBased = isBitcoinBased(account.coinCode);
+  const xpub = 'xpub' in config.keyInfo ? config.keyInfo.xpub : undefined;
   return (
     <div className={style.address}>
       <div className={style.qrCode}>
-        { bitcoinBased ? (
+        { bitcoinBased && xpub ? (
           <QRCode
-            data={config.keyInfo.xpub} />
+            data={xpub} />
         ) : null }
       </div>
       <div className={style.details}>
@@ -67,7 +71,7 @@ export const SigningConfiguration = ({ account, info, code, signingConfigIndex, 
           <strong>{account.isToken ? 'Token' : 'Coin'}:</strong>
           <span>{account.coinName} ({account.coinUnit})</span>
         </div>
-        { bitcoinBased ? (
+        { bitcoinBased && xpub ? (
           <div key="xpub" className={`${style.entry || ''} ${style.largeEntry || ''}`}>
             <strong className="m-right-half">
               {t('accountInfo.extendedPublicKey')}:
@@ -76,7 +80,7 @@ export const SigningConfiguration = ({ account, info, code, signingConfigIndex, 
               className="flex-grow"
               alignLeft
               flexibleHeight
-              value={config.keyInfo.xpub} />
+              value={xpub} />
           </div>
         ) : null }
       </div>

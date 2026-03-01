@@ -20,6 +20,7 @@ import (
 	btctypes "github.com/BitBoxSwiss/bitbox-wallet-app/backend/coins/btc/types"
 	coinpkg "github.com/BitBoxSwiss/bitbox-wallet-app/backend/coins/coin"
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/coins/eth"
+	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/coins/sol"
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/config"
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/keystore"
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/signing"
@@ -112,6 +113,8 @@ func sortAccounts(accounts []accounts.Interface) {
 				coinpkg.CodeTBTC: 1,
 				coinpkg.CodeLTC:  2,
 				coinpkg.CodeTLTC: 3,
+				coinpkg.CodeSOL:  6,
+				coinpkg.CodeTSOL: 7,
 			}[c.Code()]
 			if ok {
 				return order, true
@@ -209,6 +212,7 @@ func (backend *Backend) SupportedCoins(keystore keystore.Keystore) []coinpkg.Cod
 		coinpkg.CodeBTC, coinpkg.CodeTBTC, coinpkg.CodeRBTC,
 		coinpkg.CodeLTC, coinpkg.CodeTLTC,
 		coinpkg.CodeETH, coinpkg.CodeSEPETH,
+		coinpkg.CodeSOL, coinpkg.CodeTSOL,
 	}
 	var availableCoins []coinpkg.Code
 	for _, coinCode := range allCoins {
@@ -625,6 +629,17 @@ func (backend *Backend) createAndPersistAccountConfig(
 			name,
 			activeTokens,
 			accountsConfig)
+	case coinpkg.CodeSOL, coinpkg.CodeTSOL:
+		bip44Coin := "1'"
+		if coinCode == coinpkg.CodeSOL {
+			bip44Coin = "501'"
+		}
+		return accountCode, backend.persistSOLAccountConfig(
+			keystore, accountCoin, accountCode, hiddenBecauseUnused,
+			fmt.Sprintf("m/44'/%s/%d'/0'", bip44Coin, accountNumber),
+			name,
+			accountsConfig,
+		)
 	default:
 		return "", errp.Newf("Unrecognized coin code: %s", coinCode)
 	}
@@ -1059,6 +1074,9 @@ func (backend *Backend) createAndAddAccount(coin coinpkg.Coin, persistedConfig *
 
 			backend.createAndAddAccount(token, erc20Config)
 		}
+	case *sol.Coin:
+		account = sol.NewAccount(accountConfig, specificCoin, backend.log)
+		backend.addAccount(account)
 	default:
 		panic("unknown coin type")
 	}
@@ -1214,6 +1232,59 @@ func (backend *Backend) persistETHAccountConfig(
 	}, accountsConfig)
 }
 
+func (backend *Backend) persistSOLAccountConfig(
+	keystore keystore.Keystore,
+	coin coinpkg.Coin,
+	code accountsTypes.Code,
+	hiddenBecauseUnused bool,
+	keypath string,
+	name string,
+	accountsConfig *config.AccountsConfig,
+) error {
+	log := backend.log.
+		WithField("code", code).
+		WithField("name", name).
+		WithField("keypath", keypath)
+
+	if !keystore.SupportsAccount(coin, nil) {
+		log.Info("skipping unsupported account")
+		return nil
+	}
+
+	log.Info("persist account")
+	absoluteKeypath, err := signing.NewAbsoluteKeypath(keypath)
+	if err != nil {
+		panic(err)
+	}
+
+	rootFingerprint, err := keystore.RootFingerprint()
+	if err != nil {
+		return err
+	}
+
+	publicKey, err := keystore.SOLAddress(absoluteKeypath, false)
+	if err != nil {
+		return err
+	}
+
+	signingConfigurations := signing.Configurations{
+		signing.NewSolanaConfiguration(
+			rootFingerprint,
+			absoluteKeypath,
+			publicKey,
+		),
+	}
+
+	return backend.persistAccount(config.Account{
+		HiddenBecauseUnused:   hiddenBecauseUnused,
+		CoinCode:              coin.Code(),
+		Name:                  name,
+		Code:                  code,
+		SigningConfigurations: signingConfigurations,
+		ActiveTokens:          nil,
+	}, accountsConfig)
+}
+
 // The accountsAndKeystoreLock must be held when calling this function.
 func (backend *Backend) initPersistedAccounts() {
 	// Only load accounts which belong to connected keystores or for which watchonly is enabled.
@@ -1300,7 +1371,7 @@ func (backend *Backend) persistDefaultAccountConfigs(keystore keystore.Keystore,
 				}
 			}
 		} else {
-			for _, coinCode := range []coinpkg.Code{coinpkg.CodeTBTC, coinpkg.CodeTLTC, coinpkg.CodeSEPETH} {
+			for _, coinCode := range []coinpkg.Code{coinpkg.CodeTBTC, coinpkg.CodeTLTC, coinpkg.CodeSEPETH, coinpkg.CodeTSOL} {
 				if backend.config.AppConfig().Backend.DeprecatedCoinActive(coinCode) {
 					if _, err := backend.createAndPersistAccountConfig(
 						coinCode, 0, false, "", keystore, nil, accountsConfig); err != nil {
@@ -1311,7 +1382,7 @@ func (backend *Backend) persistDefaultAccountConfigs(keystore keystore.Keystore,
 			}
 		}
 	} else {
-		for _, coinCode := range []coinpkg.Code{coinpkg.CodeBTC, coinpkg.CodeLTC, coinpkg.CodeETH} {
+		for _, coinCode := range []coinpkg.Code{coinpkg.CodeBTC, coinpkg.CodeLTC, coinpkg.CodeETH, coinpkg.CodeSOL} {
 			if backend.config.AppConfig().Backend.DeprecatedCoinActive(coinCode) {
 				// In the past, ERC20 tokens were configured to be active or inactive globally, now they are
 				// active/inactive per ETH account. We use the previous global settings to decide the default

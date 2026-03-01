@@ -11,6 +11,7 @@ import (
 	coinpkg "github.com/BitBoxSwiss/bitbox-wallet-app/backend/coins/coin"
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/coins/eth"
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/coins/ltc"
+	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/coins/sol"
 	keystorePkg "github.com/BitBoxSwiss/bitbox-wallet-app/backend/keystore"
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/signing"
 	"github.com/BitBoxSwiss/bitbox-wallet-app/util/errp"
@@ -75,6 +76,8 @@ func (keystore *keystore) SupportsCoin(coin coinpkg.Coin) bool {
 			return keystore.device.SupportsERC20(specificCoin.ERC20Token().ContractAddress().String())
 		}
 		return keystore.device.SupportsETH(specificCoin.ChainID())
+	case *sol.Coin:
+		return true
 	default:
 		return false
 	}
@@ -116,6 +119,8 @@ func (keystore *keystore) CanVerifyAddress(coin coinpkg.Coin) (bool, bool, error
 		_, ok := btcMsgCoinMap[coin.Code()]
 		return ok, optional, nil
 	case *eth.Coin:
+		return true, optional, nil
+	case *sol.Coin:
 		return true, optional, nil
 	}
 	return false, false, nil
@@ -177,6 +182,16 @@ func (keystore *keystore) VerifyAddressETH(
 		return nil
 	}
 	return err
+}
+
+// SOLAddress implements keystore.Keystore.
+func (keystore *keystore) SOLAddress(keypath signing.AbsoluteKeypath, display bool) (string, error) {
+	address, err := keystore.device.SolanaPub(keypath.ToUInt32(), display)
+	if firmware.IsErrorAbort(err) {
+		// No special action on user abort.
+		return "", nil
+	}
+	return address, err
 }
 
 // CanVerifyExtendedPublicKey implements keystore.Keystore.
@@ -453,6 +468,19 @@ func (keystore *keystore) SignTransaction(proposedTx interface{}) error {
 		return keystore.signBTCTransaction(specificProposedTx)
 	case *eth.TxProposal:
 		return keystore.signETHTransaction(specificProposedTx)
+	case *sol.TxProposal:
+		signature, _, err := keystore.device.SolanaSignTransaction(
+			specificProposedTx.Keypath.ToUInt32(),
+			specificProposedTx.Message,
+		)
+		if firmware.IsErrorAbort(err) {
+			return errp.WithStack(keystorePkg.ErrSigningAborted)
+		}
+		if err != nil {
+			return err
+		}
+		specificProposedTx.Signature = signature
+		return nil
 	default:
 		panic("unknown proposal type")
 	}

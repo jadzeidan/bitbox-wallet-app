@@ -1,0 +1,76 @@
+2026-03-01 22:06:56,065 - aqt.main - INFO - installer 8439210560 aqtinstall(aqt) v3.3.0 on Python 3.14.0 [CPython Clang 16.0.0 (clang-1600.0.26.6)]
+2026-03-01 22:06:56,066 - aqt.helper - DEBUG - helper 8439210560 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/mac_x64/desktop/qt6_682/qt6_682/Updates.xml.sha256
+2026-03-01 22:06:56,492 - aqt.helper - DEBUG - helper 8439210560 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/mac_x64/extensions/qtwebengine/682/clang_64/Updates.xml.sha256
+2026-03-01 22:06:56,863 - aqt.archives - INFO - archives 8439210560 Found extension qtwebengine
+2026-03-01 22:06:56,863 - aqt.helper - DEBUG - helper 8439210560 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/mac_x64/extensions/qtpdf/682/clang_64/Updates.xml.sha256
+2026-03-01 22:06:57,225 - aqt.archives - INFO - archives 8439210560 Found extension qtpdf
+2026-03-01 22:06:57,619 - aqt.helper - DEBUG - helper 8439210560 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/mac_x64/desktop/qt6_682/qt6_682/qt.qt6.682.addons.qtserialport.clang_64/6.8.2-0-202501260836qtserialport-MacOS-MacOS_14-Clang-MacOS-MacOS_14-X86_64-ARM64.7z.sha256
+2026-03-01 22:06:57,623 - aqt.helper - DEBUG - helper 8439210560 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/mac_x64/desktop/qt6_682/qt6_682/qt.qt6.682.addons.qtpositioning.clang_64/6.8.2-0-202501260836qtpositioning-MacOS-MacOS_14-Clang-MacOS-MacOS_14-X86_64-ARM64.7z.sha256
+2026-03-01 22:06:57,623 - aqt.helper - DEBUG - helper 8439210560 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/mac_x64/desktop/qt6_682/qt6_682/qt.qt6.682.addons.qtwebchannel.clang_64/6.8.2-0-202501260836qtwebchannel-MacOS-MacOS_14-Clang-MacOS-MacOS_14-X86_64-ARM64.7z.sha256
+2026-03-01 22:06:57,632 - aqt.helper - DEBUG - helper 8439210560 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/mac_x64/desktop/qt6_682/qt6_682/qt.qt6.682.clang_64/6.8.2-0-202501260836qtbase-MacOS-MacOS_14-Clang-MacOS-MacOS_14-X86_64-ARM64.7z.sha256
+2026-03-01 22:06:57,821 - aqt.helper - INFO - helper 8439210560 Downloading qtbase...
+2026-03-01 22:06:57,821 - aqt.helper - INFO - helper 8439210560 Downloading qtpositioning...
+2026-03-01 22:06:57,822 - aqt.helper - INFO - helper 8439210560 Downloading qtserialport...
+2026-03-01 22:06:57,822 - aqt.installer - DEBUG - installer 8439210560 Download URL: https://download.qt.io/online/qtsdkrepository/mac_x64/desktop/qt6_682/qt6_682/qt.qt6.682.addons.qtserialport.clang_64/6.8.2-0-202501260836qtserialport-MacOS-MacOS_14-Clang-MacOS-MacOS_14-X86_64-ARM64.7z
+2026-03-01 22:06:57,822 - aqt.installer - DEBUG - installer 8439210560 Download URL: https://download.qt.io/online/qtsdkrepository/mac_x64/desktop/qt6_682/qt6_682/qt.qt6.682.addons.qtpositioning.clang_64/6.8.2-0-202501260836qtpositioning-MacOS-MacOS_14-Clang-MacOS-MacOS_14-X86_64-ARM64.7z
+2026-03-01 22:06:57,822 - aqt.installer - DEBUG - installer 8439210560 Download URL: https://download.qt.io/online/qtsdkrepository/mac_x64/desktop/qt6_682/qt6_682/qt.qt6.682.clang_64/6.8.2-0-202501260836qtbase-MacOS-MacOS_14-Clang-MacOS-MacOS_14-X86_64-ARM64.7z
+2026-03-01 22:06:57,824 - aqt.helper - INFO - helper 8439210560 Downloading qtwebchannel...
+2026-03-01 22:06:57,825 - aqt.installer - DEBUG - installer 8439210560 Download URL: https://download.qt.io/online/qtsdkrepository/mac_x64/desktop/qt6_682/qt6_682/qt.qt6.682.addons.qtwebchannel.clang_64/6.8.2-0-202501260836qtwebchannel-MacOS-MacOS_14-Clang-MacOS-MacOS_14-X86_64-ARM64.7z
+2026-03-01 22:06:57,998 - aqt.helper - DEBUG - helper 8439210560 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/mac_x64/desktop/qt6_682/qt6_682/qt.qt6.682.addons.qtserialport.clang_64/6.8.2-0-202501260836qtserialport-MacOS-MacOS_14-Clang-MacOS-MacOS_14-X86_64-ARM64.7z
+2026-03-01 22:06:57,998 - aqt.helper - INFO - helper 8439210560 Redirected: ftp.fau.de
+2026-03-01 22:06:58,004 - aqt.helper - DEBUG - helper 8439210560 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/mac_x64/desktop/qt6_682/qt6_682/qt.qt6.682.addons.qtwebchannel.clang_64/6.8.2-0-202501260836qtwebchannel-MacOS-MacOS_14-Clang-MacOS-MacOS_14-X86_64-ARM64.7z
+2026-03-01 22:06:58,004 - aqt.helper - DEBUG - helper 8439210560 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/mac_x64/desktop/qt6_682/qt6_682/qt.qt6.682.addons.qtpositioning.clang_64/6.8.2-0-202501260836qtpositioning-MacOS-MacOS_14-Clang-MacOS-MacOS_14-X86_64-ARM64.7z
+2026-03-01 22:06:58,004 - aqt.helper - DEBUG - helper 8439210560 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/mac_x64/desktop/qt6_682/qt6_682/qt.qt6.682.clang_64/6.8.2-0-202501260836qtbase-MacOS-MacOS_14-Clang-MacOS-MacOS_14-X86_64-ARM64.7z
+2026-03-01 22:06:58,004 - aqt.helper - INFO - helper 8439210560 Redirected: ftp.fau.de
+2026-03-01 22:06:58,004 - aqt.helper - INFO - helper 8439210560 Redirected: ftp.fau.de
+2026-03-01 22:06:58,004 - aqt.helper - INFO - helper 8439210560 Redirected: ftp.fau.de
+2026-03-01 22:06:58,480 - aqt.installer - INFO - installer 8439210560 Finished installation of qtserialport-MacOS-MacOS_14-Clang-MacOS-MacOS_14-X86_64-ARM64.7z in 0.86447046
+2026-03-01 22:06:58,491 - aqt.helper - DEBUG - helper 8439210560 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/mac_x64/desktop/qt6_682/qt6_682/qt.qt6.682.clang_64/6.8.2-0-202501260836qtdeclarative-MacOS-MacOS_14-Clang-MacOS-MacOS_14-X86_64-ARM64.7z.sha256
+2026-03-01 22:06:58,612 - aqt.installer - INFO - installer 8439210560 Finished installation of qtwebchannel-MacOS-MacOS_14-Clang-MacOS-MacOS_14-X86_64-ARM64.7z in 0.99278154
+2026-03-01 22:06:58,619 - aqt.helper - DEBUG - helper 8439210560 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/mac_x64/desktop/qt6_682/qt6_682/qt.qt6.682.clang_64/6.8.2-0-202501260836qtsvg-MacOS-MacOS_14-Clang-MacOS-MacOS_14-X86_64-ARM64.7z.sha256
+2026-03-01 22:06:58,706 - aqt.helper - INFO - helper 8439210560 Downloading qtdeclarative...
+2026-03-01 22:06:58,706 - aqt.installer - DEBUG - installer 8439210560 Download URL: https://download.qt.io/online/qtsdkrepository/mac_x64/desktop/qt6_682/qt6_682/qt.qt6.682.clang_64/6.8.2-0-202501260836qtdeclarative-MacOS-MacOS_14-Clang-MacOS-MacOS_14-X86_64-ARM64.7z
+2026-03-01 22:06:58,811 - aqt.helper - INFO - helper 8439210560 Downloading qtsvg...
+2026-03-01 22:06:58,812 - aqt.installer - DEBUG - installer 8439210560 Download URL: https://download.qt.io/online/qtsdkrepository/mac_x64/desktop/qt6_682/qt6_682/qt.qt6.682.clang_64/6.8.2-0-202501260836qtsvg-MacOS-MacOS_14-Clang-MacOS-MacOS_14-X86_64-ARM64.7z
+2026-03-01 22:06:58,900 - aqt.helper - DEBUG - helper 8439210560 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/mac_x64/desktop/qt6_682/qt6_682/qt.qt6.682.clang_64/6.8.2-0-202501260836qtdeclarative-MacOS-MacOS_14-Clang-MacOS-MacOS_14-X86_64-ARM64.7z
+2026-03-01 22:06:58,900 - aqt.helper - INFO - helper 8439210560 Redirected: ftp.fau.de
+2026-03-01 22:06:58,998 - aqt.helper - DEBUG - helper 8439210560 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/mac_x64/desktop/qt6_682/qt6_682/qt.qt6.682.clang_64/6.8.2-0-202501260836qtsvg-MacOS-MacOS_14-Clang-MacOS-MacOS_14-X86_64-ARM64.7z
+2026-03-01 22:06:58,998 - aqt.helper - INFO - helper 8439210560 Redirected: ftp.fau.de
+2026-03-01 22:06:59,637 - aqt.installer - INFO - installer 8439210560 Finished installation of qtpositioning-MacOS-MacOS_14-Clang-MacOS-MacOS_14-X86_64-ARM64.7z in 2.01785642
+2026-03-01 22:06:59,644 - aqt.helper - DEBUG - helper 8439210560 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/mac_x64/desktop/qt6_682/qt6_682/qt.qt6.682.clang_64/6.8.2-0-202501260836qttools-MacOS-MacOS_14-Clang-MacOS-MacOS_14-X86_64-ARM64.7z.sha256
+2026-03-01 22:06:59,831 - aqt.helper - INFO - helper 8439210560 Downloading qttools...
+2026-03-01 22:06:59,831 - aqt.installer - DEBUG - installer 8439210560 Download URL: https://download.qt.io/online/qtsdkrepository/mac_x64/desktop/qt6_682/qt6_682/qt.qt6.682.clang_64/6.8.2-0-202501260836qttools-MacOS-MacOS_14-Clang-MacOS-MacOS_14-X86_64-ARM64.7z
+2026-03-01 22:07:00,036 - aqt.helper - DEBUG - helper 8439210560 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/mac_x64/desktop/qt6_682/qt6_682/qt.qt6.682.clang_64/6.8.2-0-202501260836qttools-MacOS-MacOS_14-Clang-MacOS-MacOS_14-X86_64-ARM64.7z
+2026-03-01 22:07:00,036 - aqt.helper - INFO - helper 8439210560 Redirected: ftp.fau.de
+2026-03-01 22:07:00,364 - aqt.installer - INFO - installer 8439210560 Finished installation of qtsvg-MacOS-MacOS_14-Clang-MacOS-MacOS_14-X86_64-ARM64.7z in 1.74527550
+2026-03-01 22:07:00,372 - aqt.helper - DEBUG - helper 8439210560 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/mac_x64/desktop/qt6_682/qt6_682/qt.qt6.682.clang_64/6.8.2-0-202501260836qttranslations-MacOS-MacOS_14-Clang-MacOS-MacOS_14-X86_64-ARM64.7z.sha256
+2026-03-01 22:07:00,592 - aqt.helper - INFO - helper 8439210560 Downloading qttranslations...
+2026-03-01 22:07:00,592 - aqt.installer - DEBUG - installer 8439210560 Download URL: https://download.qt.io/online/qtsdkrepository/mac_x64/desktop/qt6_682/qt6_682/qt.qt6.682.clang_64/6.8.2-0-202501260836qttranslations-MacOS-MacOS_14-Clang-MacOS-MacOS_14-X86_64-ARM64.7z
+2026-03-01 22:07:00,835 - aqt.helper - DEBUG - helper 8439210560 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/mac_x64/desktop/qt6_682/qt6_682/qt.qt6.682.clang_64/6.8.2-0-202501260836qttranslations-MacOS-MacOS_14-Clang-MacOS-MacOS_14-X86_64-ARM64.7z
+2026-03-01 22:07:00,836 - aqt.helper - INFO - helper 8439210560 Redirected: ftp.fau.de
+2026-03-01 22:07:02,442 - aqt.installer - INFO - installer 8439210560 Finished installation of qttranslations-MacOS-MacOS_14-Clang-MacOS-MacOS_14-X86_64-ARM64.7z in 2.07056021
+2026-03-01 22:07:02,449 - aqt.helper - DEBUG - helper 8439210560 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/mac_x64/extensions/qtwebengine/682/clang_64/extensions.qtwebengine.682.clang_64/6.8.2-0-202501260837qtwebengine-MacOS-MacOS_14-Clang-MacOS-MacOS_14-X86_64-ARM64.7z.sha256
+2026-03-01 22:07:02,661 - aqt.helper - INFO - helper 8439210560 Downloading qtwebengine...
+2026-03-01 22:07:02,661 - aqt.installer - DEBUG - installer 8439210560 Download URL: https://download.qt.io/online/qtsdkrepository/mac_x64/extensions/qtwebengine/682/clang_64/extensions.qtwebengine.682.clang_64/6.8.2-0-202501260837qtwebengine-MacOS-MacOS_14-Clang-MacOS-MacOS_14-X86_64-ARM64.7z
+2026-03-01 22:07:02,889 - aqt.helper - DEBUG - helper 8439210560 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/mac_x64/extensions/qtwebengine/682/clang_64/extensions.qtwebengine.682.clang_64/6.8.2-0-202501260837qtwebengine-MacOS-MacOS_14-Clang-MacOS-MacOS_14-X86_64-ARM64.7z
+2026-03-01 22:07:02,889 - aqt.helper - INFO - helper 8439210560 Redirected: ftp.fau.de
+2026-03-01 22:07:29,631 - aqt.installer - INFO - installer 8439210560 Finished installation of qttools-MacOS-MacOS_14-Clang-MacOS-MacOS_14-X86_64-ARM64.7z in 29.98695875
+2026-03-01 22:07:39,988 - aqt.installer - INFO - installer 8439210560 Finished installation of qtbase-MacOS-MacOS_14-Clang-MacOS-MacOS_14-X86_64-ARM64.7z in 42.36000242
+2026-03-01 22:08:18,381 - aqt.installer - INFO - installer 8439210560 Finished installation of qtwebengine-MacOS-MacOS_14-Clang-MacOS-MacOS_14-X86_64-ARM64.7z in 75.93025812
+2026-03-01 22:08:21,199 - aqt.installer - INFO - installer 8439210560 Finished installation of qtdeclarative-MacOS-MacOS_14-Clang-MacOS-MacOS_14-X86_64-ARM64.7z in 82.70611671
+2026-03-01 22:08:21,846 - aqt.updater - INFO - updater 8439210560 Patching /tmp/Qt/6.8.2/macos/bin/qmake
+2026-03-01 22:08:21,852 - aqt.updater - INFO - updater 8439210560 Patching /tmp/Qt/6.8.2/macos/lib/libQt6QmlLS.prl
+2026-03-01 22:08:21,853 - aqt.updater - INFO - updater 8439210560 Patching /tmp/Qt/6.8.2/macos/lib/libQt6FbSupport.prl
+2026-03-01 22:08:21,853 - aqt.updater - INFO - updater 8439210560 Patching /tmp/Qt/6.8.2/macos/lib/libQt6QmlDebug.prl
+2026-03-01 22:08:21,853 - aqt.updater - INFO - updater 8439210560 Patching /tmp/Qt/6.8.2/macos/lib/libQt6QmlTypeRegistrar.prl
+2026-03-01 22:08:21,854 - aqt.updater - INFO - updater 8439210560 Patching /tmp/Qt/6.8.2/macos/lib/libQt6QuickTestUtils.prl
+2026-03-01 22:08:21,854 - aqt.updater - INFO - updater 8439210560 Patching /tmp/Qt/6.8.2/macos/lib/libQt6ExampleIcons.prl
+2026-03-01 22:08:21,855 - aqt.updater - INFO - updater 8439210560 Patching /tmp/Qt/6.8.2/macos/lib/libQt6QuickControlsTestUtils.prl
+2026-03-01 22:08:21,855 - aqt.updater - INFO - updater 8439210560 Patching /tmp/Qt/6.8.2/macos/lib/libQt6DeviceDiscoverySupport.prl
+2026-03-01 22:08:21,855 - aqt.updater - INFO - updater 8439210560 Patching /tmp/Qt/6.8.2/macos/lib/libQt6QmlDom.prl
+2026-03-01 22:08:21,855 - aqt.updater - INFO - updater 8439210560 Patching /tmp/Qt/6.8.2/macos/lib/libQt6ExamplesAssetDownloader.prl
+2026-03-01 22:08:21,856 - aqt.updater - INFO - updater 8439210560 Patching /tmp/Qt/6.8.2/macos/lib/libQt6QmlAssetDownloader.prl
+2026-03-01 22:08:21,856 - aqt.updater - INFO - updater 8439210560 Patching /tmp/Qt/6.8.2/macos/lib/libQt6PacketProtocol.prl
+2026-03-01 22:08:21,856 - aqt.updater - INFO - updater 8439210560 Patching /tmp/Qt/6.8.2/macos/lib/libQt6QmlToolingSettings.prl
+2026-03-01 22:08:21,856 - aqt.main - INFO - installer 8439210560 Finished installation
+2026-03-01 22:08:21,856 - aqt.main - INFO - installer 8439210560 Time elapsed: 85.78873317 second

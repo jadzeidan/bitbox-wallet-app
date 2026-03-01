@@ -120,6 +120,9 @@ type KeystoreMock struct {
 	// RootFingerprintFunc mocks the RootFingerprint method.
 	RootFingerprintFunc func() ([]byte, error)
 
+	// SOLAddressFunc mocks the SOLAddress method.
+	SOLAddressFunc func(keypath signing.AbsoluteKeypath, display bool) (string, error)
+
 	// SignBTCMessageFunc mocks the SignBTCMessage method.
 	SignBTCMessageFunc func(message []byte, keypath signing.AbsoluteKeypath, scriptType signing.ScriptType, coinMoqParam coin.Code) ([]byte, error)
 
@@ -541,6 +544,14 @@ func (mock *KeystoreMock) RootFingerprint() ([]byte, error) {
 	mock.calls.RootFingerprint = append(mock.calls.RootFingerprint, callInfo)
 	mock.lockRootFingerprint.Unlock()
 	return mock.RootFingerprintFunc()
+}
+
+// SOLAddress calls SOLAddressFunc.
+func (mock *KeystoreMock) SOLAddress(keypath signing.AbsoluteKeypath, display bool) (string, error) {
+	if mock.SOLAddressFunc == nil {
+		panic("KeystoreMock.SOLAddressFunc: method is nil but Keystore.SOLAddress was just called")
+	}
+	return mock.SOLAddressFunc(keypath, display)
 }
 
 // RootFingerprintCalls gets all the calls that were made to RootFingerprint.

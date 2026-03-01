@@ -148,6 +148,11 @@ func (keystore *Keystore) VerifyAddressETH(*signing.Configuration, coin.Coin) er
 	return errp.New("The software-based keystore has no secure output to display the address.")
 }
 
+// SOLAddress implements keystore.Keystore.
+func (keystore *Keystore) SOLAddress(signing.AbsoluteKeypath, bool) (string, error) {
+	return "", errp.New("unsupported")
+}
+
 // CanVerifyExtendedPublicKey implements keystore.Keystore.
 func (keystore *Keystore) CanVerifyExtendedPublicKey() bool {
 	return false
@@ -287,7 +292,7 @@ func (keystore *Keystore) SignTransaction(
 	case *eth.TxProposal:
 		return keystore.signETHTransaction(specificProposedTx)
 	default:
-		panic("unknown proposal type")
+		return errp.New("unsupported")
 	}
 }
 

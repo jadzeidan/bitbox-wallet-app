@@ -91,10 +91,14 @@ func ConvertToLegacyConfigurations(configurations Configurations) LegacyConfigur
 		if cfg.BitcoinSimple != nil {
 			scriptType = cfg.BitcoinSimple.ScriptType
 		}
+		var xpubs []*hdkeychain.ExtendedKey
+		if xpub := cfg.ExtendedPublicKey(); xpub != nil {
+			xpubs = []*hdkeychain.ExtendedKey{xpub}
+		}
 		result = append(result, &LegacyConfiguration{
 			scriptType:         scriptType,
 			absoluteKeypath:    cfg.AbsoluteKeypath(),
-			extendedPublicKeys: []*hdkeychain.ExtendedKey{cfg.ExtendedPublicKey()},
+			extendedPublicKeys: xpubs,
 			signingThreshold:   1,
 		})
 	}

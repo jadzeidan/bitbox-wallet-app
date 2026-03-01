@@ -20,6 +20,10 @@ const (
 	CodeETH Code = "eth"
 	// CodeSEPETH is Ethereum Sepolia.
 	CodeSEPETH Code = "sepeth"
+	// CodeSOL is Solana.
+	CodeSOL Code = "sol"
+	// CodeTSOL is Solana Devnet.
+	CodeTSOL Code = "tsol"
 	// If you add coins, don't forget to update `testnetCoins` below.
 	// There are some more coin codes for the supported erc20 tokens in erc20.go.
 )
@@ -40,4 +44,5 @@ var TestnetCoins = map[Code]struct{}{
 	CodeTBTC:   {},
 	CodeTLTC:   {},
 	CodeSEPETH: {},
+	CodeTSOL:   {},
 }

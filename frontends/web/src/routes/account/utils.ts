@@ -58,6 +58,9 @@ export const getCoinCode = (coinCode: CoinCode): CoinCode | undefined => {
   case 'eth':
   case 'sepeth':
     return 'eth';
+  case 'sol':
+  case 'tsol':
+    return 'sol';
   }
   if (coinCode.startsWith('eth-erc20-')) {
     return 'eth';
