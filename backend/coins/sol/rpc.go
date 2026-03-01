@@ -10,6 +10,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
 
 	"github.com/BitBoxSwiss/bitbox-wallet-app/util/errp"
 )
@@ -36,6 +40,8 @@ type RPCClient struct {
 	url        string
 	apiKey     string
 	httpClient *http.Client
+	mu         sync.Mutex
+	nextCallAt time.Time
 }
 
 func NewRPCClient(url string, apiKey string, httpClient *http.Client) *RPCClient {
@@ -52,38 +58,156 @@ func (c *RPCClient) call(ctx context.Context, method string, params interface{},
 	if err != nil {
 		return errp.WithStack(err)
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url, bytes.NewReader(payload))
-	if err != nil {
-		return errp.WithStack(err)
-	}
-	request.Header.Set("Accept", "application/json")
-	request.Header.Set("Content-Type", "application/json")
-	if c.apiKey != "" {
-		request.Header.Set("x-api-key", c.apiKey)
-	}
-	response, err := c.httpClient.Do(request)
-	if err != nil {
-		return errp.WithStack(err)
-	}
-	defer response.Body.Close()
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(response.Body, 2048))
-		return errp.Newf("solana rpc status %d: %s", response.StatusCode, string(body))
-	}
-	var decoded rpcResponse
-	if err := json.NewDecoder(io.LimitReader(response.Body, 8<<20)).Decode(&decoded); err != nil {
-		return errp.WithStack(err)
-	}
-	if decoded.Error != nil {
-		return errp.Newf("solana rpc error %d: %s", decoded.Error.Code, decoded.Error.Message)
-	}
-	if result == nil {
+	const maxAttempts = 5
+	const baseBackoff = 250 * time.Millisecond
+	const maxBackoff = 3 * time.Second
+	const minRequestInterval = 120 * time.Millisecond
+
+	var lastErr error
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		if err := c.pace(ctx, minRequestInterval); err != nil {
+			return err
+		}
+
+		request, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url, bytes.NewReader(payload))
+		if err != nil {
+			return errp.WithStack(err)
+		}
+		request.Header.Set("Accept", "application/json")
+		request.Header.Set("Content-Type", "application/json")
+		if c.apiKey != "" {
+			request.Header.Set("x-api-key", c.apiKey)
+		}
+
+		response, err := c.httpClient.Do(request)
+		if err != nil {
+			// Network errors can be transient; retry while attempts remain.
+			lastErr = errp.WithStack(err)
+			if attempt < maxAttempts-1 {
+				if err := sleepWithContext(ctx, backoffDelay(baseBackoff, maxBackoff, attempt)); err != nil {
+					return err
+				}
+				continue
+			}
+			return lastErr
+		}
+
+		body, readErr := io.ReadAll(io.LimitReader(response.Body, 8<<20))
+		response.Body.Close()
+		if readErr != nil {
+			lastErr = errp.WithStack(readErr)
+			if attempt < maxAttempts-1 {
+				if err := sleepWithContext(ctx, backoffDelay(baseBackoff, maxBackoff, attempt)); err != nil {
+					return err
+				}
+				continue
+			}
+			return lastErr
+		}
+
+		if response.StatusCode < 200 || response.StatusCode >= 300 {
+			lastErr = errp.Newf("solana rpc status %d: %s", response.StatusCode, string(body))
+			if response.StatusCode == http.StatusTooManyRequests && attempt < maxAttempts-1 {
+				if err := sleepWithContext(ctx, retryDelay(response.Header.Get("Retry-After"), baseBackoff, maxBackoff, attempt)); err != nil {
+					return err
+				}
+				continue
+			}
+			return lastErr
+		}
+
+		var decoded rpcResponse
+		if err := json.Unmarshal(body, &decoded); err != nil {
+			lastErr = errp.WithStack(err)
+			if attempt < maxAttempts-1 {
+				if err := sleepWithContext(ctx, backoffDelay(baseBackoff, maxBackoff, attempt)); err != nil {
+					return err
+				}
+				continue
+			}
+			return lastErr
+		}
+		if decoded.Error != nil {
+			lastErr = errp.Newf("solana rpc error %d: %s", decoded.Error.Code, decoded.Error.Message)
+			if isRateLimitedRPCError(decoded.Error.Code, decoded.Error.Message) && attempt < maxAttempts-1 {
+				if err := sleepWithContext(ctx, backoffDelay(baseBackoff, maxBackoff, attempt)); err != nil {
+					return err
+				}
+				continue
+			}
+			return lastErr
+		}
+		if result == nil {
+			return nil
+		}
+		if err := json.Unmarshal(decoded.Result, result); err != nil {
+			return errp.WithStack(err)
+		}
 		return nil
 	}
-	if err := json.Unmarshal(decoded.Result, result); err != nil {
-		return errp.WithStack(err)
+	if lastErr != nil {
+		return lastErr
 	}
-	return nil
+	return errp.New("solana rpc call failed")
+}
+
+func (c *RPCClient) pace(ctx context.Context, minInterval time.Duration) error {
+	c.mu.Lock()
+	now := time.Now()
+	wait := c.nextCallAt.Sub(now)
+	if wait < 0 {
+		wait = 0
+	}
+	next := now
+	if c.nextCallAt.After(now) {
+		next = c.nextCallAt
+	}
+	c.nextCallAt = next.Add(minInterval)
+	c.mu.Unlock()
+	return sleepWithContext(ctx, wait)
+}
+
+func sleepWithContext(ctx context.Context, d time.Duration) error {
+	if d <= 0 {
+		return nil
+	}
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return errp.WithStack(ctx.Err())
+	case <-timer.C:
+		return nil
+	}
+}
+
+func backoffDelay(base time.Duration, max time.Duration, attempt int) time.Duration {
+	d := base * time.Duration(1<<attempt)
+	if d > max {
+		return max
+	}
+	return d
+}
+
+func retryDelay(retryAfter string, base time.Duration, max time.Duration, attempt int) time.Duration {
+	if retryAfter != "" {
+		if seconds, err := strconv.Atoi(strings.TrimSpace(retryAfter)); err == nil && seconds > 0 {
+			d := time.Duration(seconds) * time.Second
+			if d > max {
+				return max
+			}
+			return d
+		}
+	}
+	return backoffDelay(base, max, attempt)
+}
+
+func isRateLimitedRPCError(code int, message string) bool {
+	if code == -32429 {
+		return true
+	}
+	msg := strings.ToLower(message)
+	return strings.Contains(msg, "rate limit")
 }
 
 func (c *RPCClient) GetBalance(ctx context.Context, address string) (uint64, error) {
