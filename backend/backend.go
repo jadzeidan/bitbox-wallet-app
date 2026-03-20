@@ -785,6 +785,12 @@ func (backend *Backend) registerKeystore(keystore keystore.Keystore) {
 		if err := persistKeystore(accountsConfig); err != nil {
 			log.WithError(err).Error("Could not persist keystore")
 		}
+		repaired, err := backend.repairMalformedSolanaAccountsForKeystore(keystore, accountsConfig)
+		if err != nil {
+			log.WithError(err).Error("Could not repair malformed Solana account configs")
+		} else if repaired > 0 {
+			log.WithField("repaired", repaired).Info("Repaired malformed Solana account configs")
+		}
 
 		// Persist default accounts the first time, otherwise perform any migrations that may be
 		// needed on the persisted accounts.

@@ -8,6 +8,7 @@ import (
 	"math"
 	"math/big"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -680,6 +681,141 @@ func findHiddenAccount(
 	return result, nil
 }
 
+func findPersistedAccount(
+	coinCode coinpkg.Code,
+	keystore keystore.Keystore,
+	accountsConfig *config.AccountsConfig,
+	accountNumber *uint16,
+) (*config.Account, error) {
+	rootFingerprint, err := keystore.RootFingerprint()
+	if err != nil {
+		return nil, err
+	}
+	smallestAccountNumber := uint16(math.MaxUint16)
+	var result *config.Account
+
+	for _, account := range accountsConfig.Accounts {
+		if coinCode != account.CoinCode {
+			continue
+		}
+		if !account.SigningConfigurations.ContainsRootFingerprint(rootFingerprint) {
+			continue
+		}
+		if len(account.SigningConfigurations) == 0 {
+			continue
+		}
+		acctNum, err := account.SigningConfigurations[0].AccountNumber()
+		if err != nil {
+			continue
+		}
+		if accountNumber != nil && acctNum != *accountNumber {
+			continue
+		}
+		if acctNum < smallestAccountNumber {
+			smallestAccountNumber = acctNum
+			result = account
+		}
+	}
+	return result, nil
+}
+
+func parseRegularAccountCode(accountCode accountsTypes.Code) (
+	rootFingerprintHex string,
+	codeCoin coinpkg.Code,
+	accountNumber uint16,
+	ok bool,
+) {
+	parts := strings.Split(string(accountCode), "-")
+	if len(parts) != 4 || parts[0] != "v0" {
+		return "", "", 0, false
+	}
+	number, err := strconv.ParseUint(parts[3], 10, 16)
+	if err != nil {
+		return "", "", 0, false
+	}
+	return parts[1], coinpkg.Code(parts[2]), uint16(number), true
+}
+
+func hasValidSolanaSigningConfiguration(account *config.Account) bool {
+	for _, signingConfig := range account.SigningConfigurations {
+		if signingConfig != nil && signingConfig.SolanaSimple != nil {
+			return true
+		}
+	}
+	return false
+}
+
+func solanaKeypath(coinCode coinpkg.Code, accountNumber uint16) (signing.AbsoluteKeypath, error) {
+	bip44Coin := "1'"
+	if coinCode == coinpkg.CodeSOL {
+		bip44Coin = "501'"
+	}
+	return signing.NewAbsoluteKeypath(fmt.Sprintf("m/44'/%s/%d'/0'", bip44Coin, accountNumber))
+}
+
+// repairMalformedSolanaAccountConfig repairs malformed persisted SOL/TSOL account configs where the
+// signing configuration is missing or empty.
+func repairMalformedSolanaAccountConfig(
+	account *config.Account,
+	keystore keystore.Keystore,
+	rootFingerprint []byte,
+) (bool, error) {
+	if account.CoinCode != coinpkg.CodeSOL && account.CoinCode != coinpkg.CodeTSOL {
+		return false, nil
+	}
+	if hasValidSolanaSigningConfiguration(account) {
+		return false, nil
+	}
+	rootFingerprintHex, codeCoin, accountNumber, ok := parseRegularAccountCode(account.Code)
+	if !ok {
+		return false, nil
+	}
+	if codeCoin != account.CoinCode {
+		return false, nil
+	}
+	if rootFingerprintHex != hex.EncodeToString(rootFingerprint) {
+		return false, nil
+	}
+	keypath, err := solanaKeypath(account.CoinCode, accountNumber)
+	if err != nil {
+		return false, err
+	}
+	publicKey, err := keystore.SOLAddress(keypath, false)
+	if err != nil {
+		return false, err
+	}
+	account.SigningConfigurations = signing.Configurations{
+		signing.NewSolanaConfiguration(rootFingerprint, keypath, publicKey),
+	}
+	return true, nil
+}
+
+func (backend *Backend) repairMalformedSolanaAccountsForKeystore(
+	keystore keystore.Keystore,
+	accountsConfig *config.AccountsConfig,
+) (int, error) {
+	rootFingerprint, err := keystore.RootFingerprint()
+	if err != nil {
+		return 0, err
+	}
+	numRepaired := 0
+	for _, account := range accountsConfig.Accounts {
+		repaired, err := repairMalformedSolanaAccountConfig(account, keystore, rootFingerprint)
+		if err != nil {
+			backend.log.WithError(err).
+				WithField("accountCode", account.Code).
+				Warn("Could not repair malformed Solana account configuration")
+			continue
+		}
+		if repaired {
+			numRepaired++
+			backend.log.WithField("accountCode", account.Code).
+				Info("Repaired malformed Solana account configuration")
+		}
+	}
+	return numRepaired, nil
+}
+
 // nextAccountNumber checks if an account for the given coin can be added, and if so, returns the
 // account number of the new account.
 func nextAccountNumber(coinCode coinpkg.Code, keystore keystore.Keystore, accountsConfig *config.AccountsConfig) (uint16, error) {
@@ -773,6 +909,41 @@ func (backend *Backend) CreateAndPersistAccountConfig(
 		}
 		accountCode, err = backend.createAndPersistAccountConfig(
 			coinCode, nextAccountNumber, false, name, keystore, nil, accountsConfig)
+		if errp.Cause(err) == errAccountAlreadyExists {
+			// Recover from persisted duplicates by activating the existing account instead.
+			existing, findErr := findPersistedAccount(coinCode, keystore, accountsConfig, &nextAccountNumber)
+			if findErr != nil {
+				return findErr
+			}
+			if existing == nil {
+				existing, findErr = findPersistedAccount(coinCode, keystore, accountsConfig, nil)
+				if findErr != nil {
+					return findErr
+				}
+			}
+			if existing == nil {
+				rootFingerprint, fpErr := keystore.RootFingerprint()
+				if fpErr != nil {
+					return fpErr
+				}
+				existing = accountsConfig.Lookup(
+					regularAccountCode(rootFingerprint, coinCode, nextAccountNumber))
+			}
+			if existing != nil {
+				rootFingerprint, fpErr := keystore.RootFingerprint()
+				if fpErr != nil {
+					return fpErr
+				}
+				_, repairErr := repairMalformedSolanaAccountConfig(existing, keystore, rootFingerprint)
+				if repairErr != nil {
+					return repairErr
+				}
+				existing.HiddenBecauseUnused = false
+				existing.Inactive = false
+				accountCode = existing.Code
+				return nil
+			}
+		}
 		return err
 	})
 	if err != nil {

@@ -573,6 +573,90 @@ func TestCreateAndPersistAccountConfig(t *testing.T) {
 	})
 }
 
+func TestCreateAndPersistAccountConfigRepairsMalformedSolanaDuplicate(t *testing.T) {
+	const solAddress = "6E8sP2SLo8T3Kf6xvW4Q4yK5r4wsXAZmRykWGBqBPdZi"
+	ks := makeBitBox02Multi()
+	ks.RootFingerprintFunc = func() ([]byte, error) {
+		return rootFingerprint1, nil
+	}
+	ks.SOLAddressFunc = func(keypath signing.AbsoluteKeypath, display bool) (string, error) {
+		require.Equal(t, "m/44'/501'/0'/0'", keypath.Encode())
+		require.False(t, display)
+		return solAddress, nil
+	}
+
+	b := newBackend(t, testnetDisabled, regtestDisabled)
+	defer b.Close()
+
+	err := b.Config().ModifyAccountsConfig(func(cfg *config.AccountsConfig) error {
+		cfg.Accounts = append(cfg.Accounts, &config.Account{
+			Used:                  true,
+			Inactive:              false,
+			HiddenBecauseUnused:   false,
+			CoinCode:              coinpkg.CodeSOL,
+			Name:                  "Solana",
+			Code:                  "v0-55555555-sol-0",
+			SigningConfigurations: signing.Configurations{&signing.Configuration{}},
+		})
+		return nil
+	})
+	require.NoError(t, err)
+
+	accountCode, err := b.CreateAndPersistAccountConfig(coinpkg.CodeSOL, "Solana", ks)
+	require.NoError(t, err)
+	require.Equal(t, accountsTypes.Code("v0-55555555-sol-0"), accountCode)
+
+	persisted := b.Config().AccountsConfig().Lookup(accountCode)
+	require.NotNil(t, persisted)
+	require.Len(t, persisted.SigningConfigurations, 1)
+	require.NotNil(t, persisted.SigningConfigurations[0].SolanaSimple)
+	require.Equal(t, solAddress, persisted.SigningConfigurations[0].SolanaSimple.KeyInfo.PublicKey)
+	require.Equal(
+		t,
+		"m/44'/501'/0'/0'",
+		persisted.SigningConfigurations[0].SolanaSimple.KeyInfo.AbsoluteKeypath.Encode(),
+	)
+}
+
+func TestRegisterKeystoreRepairsMalformedSolanaConfig(t *testing.T) {
+	const solAddress = "6E8sP2SLo8T3Kf6xvW4Q4yK5r4wsXAZmRykWGBqBPdZi"
+	ks := makeBitBox02Multi()
+	ks.RootFingerprintFunc = func() ([]byte, error) {
+		return rootFingerprint1, nil
+	}
+	ks.SOLAddressFunc = func(keypath signing.AbsoluteKeypath, display bool) (string, error) {
+		require.Equal(t, "m/44'/501'/0'/0'", keypath.Encode())
+		require.False(t, display)
+		return solAddress, nil
+	}
+
+	b := newBackend(t, testnetDisabled, regtestDisabled)
+	defer b.Close()
+
+	err := b.Config().ModifyAccountsConfig(func(cfg *config.AccountsConfig) error {
+		cfg.Accounts = append(cfg.Accounts, &config.Account{
+			Used:                  true,
+			Inactive:              false,
+			HiddenBecauseUnused:   false,
+			CoinCode:              coinpkg.CodeSOL,
+			Name:                  "Solana",
+			Code:                  "v0-55555555-sol-0",
+			SigningConfigurations: signing.Configurations{&signing.Configuration{}},
+		})
+		return nil
+	})
+	require.NoError(t, err)
+
+	b.registerKeystore(ks)
+
+	persisted := b.Config().AccountsConfig().Lookup("v0-55555555-sol-0")
+	require.NotNil(t, persisted)
+	require.Len(t, persisted.SigningConfigurations, 1)
+	require.NotNil(t, persisted.SigningConfigurations[0].SolanaSimple)
+	require.Equal(t, solAddress, persisted.SigningConfigurations[0].SolanaSimple.KeyInfo.PublicKey)
+	require.NotNil(t, b.Accounts().lookup("v0-55555555-sol-0"))
+}
+
 func TestCreateAndAddAccount(t *testing.T) {
 	b := newBackend(t, testnetDisabled, regtestDisabled)
 	defer b.Close()
