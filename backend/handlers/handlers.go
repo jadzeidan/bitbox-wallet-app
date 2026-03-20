@@ -24,6 +24,7 @@ import (
 	accountHandlers "github.com/BitBoxSwiss/bitbox-wallet-app/backend/coins/btc/handlers"
 	coinpkg "github.com/BitBoxSwiss/bitbox-wallet-app/backend/coins/coin"
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/coins/eth"
+	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/coins/sol"
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/config"
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/devices/bitbox"
 	bitboxHandlers "github.com/BitBoxSwiss/bitbox-wallet-app/backend/devices/bitbox/handlers"
@@ -360,7 +361,7 @@ func writeJSON(w io.Writer, value interface{}) {
 }
 
 type activeToken struct {
-	// TokenCode is the token code as defined in erc20.go, e.g. "eth-erc20-usdt".
+	// TokenCode is the token coin code, e.g. "eth-erc20-usdt", "sol-spl-usdt".
 	TokenCode string `json:"tokenCode"`
 	// AccountCode is the code of the account, which is not the same as the TokenCode, as there can
 	// be many accounts for the same token.
@@ -397,7 +398,8 @@ func newAccountJSON(
 	activeTokens []activeToken,
 	keystoreConnected bool) *accountJSON {
 	eth, ok := account.Coin().(*eth.Coin)
-	isToken := ok && eth.ERC20Token() != nil
+	solCoin, okSol := account.Coin().(*sol.Coin)
+	isToken := ok && eth.ERC20Token() != nil || okSol && solCoin.Token() != nil
 	var accountNumberPtr *uint16
 	accountNumber, err := account.Config().Config.SigningConfigurations.AccountNumber()
 	if err == nil {
@@ -650,11 +652,12 @@ func (handlers *Handlers) getAccounts(*http.Request) interface{} {
 		var activeTokens []activeToken
 
 		persistedAccount := account.Config().Config
-		if account.Coin().Code() == coinpkg.CodeETH {
+		switch account.Coin().Code() {
+		case coinpkg.CodeETH, coinpkg.CodeSOL, coinpkg.CodeTSOL:
 			for _, tokenCode := range persistedAccount.ActiveTokens {
 				activeTokens = append(activeTokens, activeToken{
 					TokenCode:   tokenCode,
-					AccountCode: backend.Erc20AccountCode(account.Config().Config.Code, tokenCode),
+					AccountCode: backend.TokenAccountCode(account.Config().Config.Code, tokenCode),
 				})
 			}
 		}

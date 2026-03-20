@@ -47,6 +47,10 @@ export const isEthereumBased = (coinCode: CoinCode): boolean => {
   return coinCode === 'eth' || coinCode === 'sepeth' || coinCode.startsWith('eth-erc20-');
 };
 
+export const isSolanaBased = (coinCode: CoinCode): boolean => {
+  return coinCode === 'sol' || coinCode === 'tsol' || coinCode.startsWith('sol-spl-');
+};
+
 export const getCoinCode = (coinCode: CoinCode): CoinCode | undefined => {
   switch (coinCode) {
   case 'btc':
@@ -64,6 +68,9 @@ export const getCoinCode = (coinCode: CoinCode): CoinCode | undefined => {
   }
   if (coinCode.startsWith('eth-erc20-')) {
     return 'eth';
+  }
+  if (coinCode.startsWith('sol-spl-')) {
+    return 'sol';
   }
 };
 

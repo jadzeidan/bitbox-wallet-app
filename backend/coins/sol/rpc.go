@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"strconv"
 	"strings"
@@ -272,19 +273,38 @@ type SignatureInfo struct {
 	} `json:"err,omitempty"`
 }
 
+// TokenAccount describes a parsed token account entry returned by getTokenAccountsByOwner.
+type TokenAccount struct {
+	Pubkey string
+	Owner  string
+	Mint   string
+	Amount string
+}
+
+// AmountBigInt parses Amount into a big.Int. Invalid amounts are interpreted as zero.
+func (tokenAccount TokenAccount) AmountBigInt() *big.Int {
+	amount, ok := new(big.Int).SetString(tokenAccount.Amount, 10)
+	if !ok {
+		return big.NewInt(0)
+	}
+	return amount
+}
+
 // TransactionInfo is a subset of getTransaction results.
 type TransactionInfo struct {
 	Slot      uint64 `json:"slot"`
 	BlockTime *int64 `json:"blockTime"`
 	Meta      struct {
-		Err         *struct{} `json:"err,omitempty"`
-		Fee         uint64    `json:"fee"`
-		PreBalances []uint64  `json:"preBalances"`
-		PostBalances []uint64 `json:"postBalances"`
+		Err               *struct{}         `json:"err,omitempty"`
+		Fee               uint64            `json:"fee"`
+		PreBalances       []uint64          `json:"preBalances"`
+		PostBalances      []uint64          `json:"postBalances"`
+		PreTokenBalances  []rpcTokenBalance `json:"preTokenBalances"`
+		PostTokenBalances []rpcTokenBalance `json:"postTokenBalances"`
 	} `json:"meta"`
 	Transaction struct {
 		Message struct {
-			AccountKeys  []transactionAccountKey `json:"accountKeys"`
+			AccountKeys  []transactionAccountKey  `json:"accountKeys"`
 			Instructions []transactionInstruction `json:"instructions"`
 		} `json:"message"`
 		Signatures []string `json:"signatures"`
@@ -323,6 +343,17 @@ type transactionInstruction struct {
 	Parsed  *parsedInstruction `json:"parsed,omitempty"`
 }
 
+type rpcTokenAmount struct {
+	Amount string `json:"amount"`
+}
+
+type rpcTokenBalance struct {
+	AccountIndex  int            `json:"accountIndex"`
+	Mint          string         `json:"mint"`
+	Owner         string         `json:"owner"`
+	UITokenAmount rpcTokenAmount `json:"uiTokenAmount"`
+}
+
 func (c *RPCClient) GetSignaturesForAddress(
 	ctx context.Context,
 	address string,
@@ -349,12 +380,56 @@ func (c *RPCClient) GetTransaction(ctx context.Context, signature string) (*Tran
 	if err := c.call(ctx, "getTransaction", []interface{}{
 		signature,
 		map[string]interface{}{
-			"encoding":                     "jsonParsed",
+			"encoding":                       "jsonParsed",
 			"maxSupportedTransactionVersion": 0,
-			"commitment":                   "confirmed",
+			"commitment":                     "confirmed",
 		},
 	}, &out); err != nil {
 		return nil, err
 	}
 	return out, nil
+}
+
+func (c *RPCClient) GetTokenAccountsByOwner(ctx context.Context, ownerAddress string, mintAddress string) ([]TokenAccount, error) {
+	var out struct {
+		Value []struct {
+			Pubkey  string `json:"pubkey"`
+			Account struct {
+				Data struct {
+					Parsed struct {
+						Info struct {
+							Mint        string `json:"mint"`
+							Owner       string `json:"owner"`
+							TokenAmount struct {
+								Amount string `json:"amount"`
+							} `json:"tokenAmount"`
+						} `json:"info"`
+					} `json:"parsed"`
+				} `json:"data"`
+			} `json:"account"`
+		} `json:"value"`
+	}
+
+	params := []interface{}{
+		ownerAddress,
+		map[string]interface{}{"mint": mintAddress},
+		map[string]interface{}{
+			"encoding":   "jsonParsed",
+			"commitment": "confirmed",
+		},
+	}
+	if err := c.call(ctx, "getTokenAccountsByOwner", params, &out); err != nil {
+		return nil, err
+	}
+
+	result := make([]TokenAccount, 0, len(out.Value))
+	for _, value := range out.Value {
+		result = append(result, TokenAccount{
+			Pubkey: value.Pubkey,
+			Owner:  value.Account.Data.Parsed.Info.Owner,
+			Mint:   value.Account.Data.Parsed.Info.Mint,
+			Amount: value.Account.Data.Parsed.Info.TokenAmount.Amount,
+		})
+	}
+	return result, nil
 }

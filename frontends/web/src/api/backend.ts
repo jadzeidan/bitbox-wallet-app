@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import type { AccountCode, CoinCode, ERC20CoinCode } from './account';
+import type { AccountCode, CoinCode, TokenCoinCode } from './account';
 import type { FailResponse, SuccessResponse } from './response';
 import { apiGet, apiPost } from '@/utils/request';
 import { TSubscriptionCallback, subscribeEndpoint } from './subscribe';
@@ -31,7 +31,7 @@ export const setAccountActive = (accountCode: AccountCode, active: boolean): Pro
 
 export const setTokenActive = (
   accountCode: AccountCode,
-  tokenCode: ERC20CoinCode,
+  tokenCode: TokenCoinCode,
   active: boolean,
 ): Promise<TSuccess> => {
   return apiPost('set-token-active', { accountCode, tokenCode, active });

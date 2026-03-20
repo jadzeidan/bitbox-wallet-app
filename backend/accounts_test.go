@@ -130,6 +130,39 @@ func TestAccounts(t *testing.T) {
 	require.Equal(t, "My ETH Renamed", b.Accounts().lookup("v0-55555555-eth-0").Config().Config.Name)
 }
 
+func TestSetTokenActiveSolana(t *testing.T) {
+	ks := makeBitBox02Multi()
+	ks.RootFingerprintFunc = func() ([]byte, error) {
+		return rootFingerprint1, nil
+	}
+	ks.SOLAddressFunc = func(keypath signing.AbsoluteKeypath, display bool) (string, error) {
+		return "6E8sP2SLo8T3Kf6xvW4Q4yK5r4wsXAZmRykWGBqBPdZi", nil
+	}
+
+	b := newBackend(t, testnetDisabled, regtestDisabled)
+	defer b.Close()
+	b.registerKeystore(ks)
+
+	solAccountCode := accountsTypes.Code("v0-55555555-sol-0")
+	if b.Config().AccountsConfig().Lookup(solAccountCode) == nil {
+		var err error
+		solAccountCode, err = b.CreateAndPersistAccountConfig(coinpkg.CodeSOL, "", ks)
+		require.NoError(t, err)
+	}
+
+	require.NoError(t, b.SetTokenActive(solAccountCode, "sol-spl-usdt", true))
+	require.NoError(t, b.SetTokenActive(solAccountCode, "sol-spl-usdc", true))
+
+	persisted := b.Config().AccountsConfig().Lookup(solAccountCode)
+	require.NotNil(t, persisted)
+	require.Equal(t, []string{"sol-spl-usdt", "sol-spl-usdc"}, persisted.ActiveTokens)
+
+	tokenAccountCodeUSDT := TokenAccountCode(solAccountCode, "sol-spl-usdt")
+	require.NotNil(t, b.Accounts().lookup(tokenAccountCodeUSDT))
+	tokenAccountCodeUSDC := TokenAccountCode(solAccountCode, "sol-spl-usdc")
+	require.NotNil(t, b.Accounts().lookup(tokenAccountCodeUSDC))
+}
+
 func TestSortAccounts(t *testing.T) {
 	xpub, err := hdkeychain.NewMaster(make([]byte, 32), &chaincfg.TestNet3Params)
 	require.NoError(t, err)

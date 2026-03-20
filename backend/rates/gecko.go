@@ -61,6 +61,8 @@ var (
 		"eth-erc20-zrx":       "0x",
 		"eth-erc20-wbtc":      "wrapped-bitcoin",
 		"eth-erc20-paxg":      "pax-gold",
+		"sol-spl-usdt":        "tether",
+		"sol-spl-usdc":        "usd-coin",
 	}
 
 	// The keys are CoinGecko coin codes.

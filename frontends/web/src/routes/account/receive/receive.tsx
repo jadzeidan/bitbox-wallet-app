@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useLoad } from '@/hooks/api';
 import { UseBackButton } from '@/hooks/backbutton';
 import * as accountApi from '@/api/account';
-import { getScriptName, isEthereumBased } from '@/routes/account/utils';
+import { getScriptName, isEthereumBased, isSolanaBased } from '@/routes/account/utils';
 import { CopyableInput } from '@/components/copy/Copy';
 import { Dialog, DialogButtons } from '@/components/dialog/dialog';
 import { Button, Radio } from '@/components/forms';
@@ -191,7 +191,7 @@ export const Receive = ({
       uriPrefix = 'bitcoin:';
     } else if (account.coinCode === 'ltc' || account.coinCode === 'tltc') {
       uriPrefix = 'litecoin:';
-    } else if (account.coinCode === 'sol' || account.coinCode === 'tsol') {
+    } else if (isSolanaBased(account.coinCode)) {
       uriPrefix = 'solana:';
     }
   }

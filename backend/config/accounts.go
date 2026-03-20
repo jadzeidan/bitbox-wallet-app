@@ -44,17 +44,17 @@ type Account struct {
 	Name                  string                 `json:"name"`
 	Code                  accountsTypes.Code     `json:"code"`
 	SigningConfigurations signing.Configurations `json:"configurations"`
-	// ActiveTokens list the tokens that should be loaded along with the account.  Currently, this
-	// only applies to ETH, and the elements are ERC20 token codes (e.g. "eth-erc20-usdt",
-	// "eth-erc20-bat", etc).
+	// ActiveTokens lists the token coin codes that should be loaded along with the account.
+	// Examples: "eth-erc20-usdt", "eth-erc20-bat", "sol-spl-usdt", etc.
 	ActiveTokens []string `json:"activeTokens,omitempty"`
 }
 
-// SetTokenActive activates/deactivates an token on an account. `tokenCode` must be an ERC20 token
-// code, e.g. "eth-erc20-usdt", "eth-erc20-bat", etc.
+// SetTokenActive activates/deactivates a token on an account.
 func (acct *Account) SetTokenActive(tokenCode string, active bool) error {
-	if acct.CoinCode != coin.CodeETH {
-		return errp.New("tokens are only enabled for ETH")
+	switch acct.CoinCode {
+	case coin.CodeETH, coin.CodeSOL, coin.CodeTSOL:
+	default:
+		return errp.New("tokens are only enabled for supported token parent accounts")
 	}
 	var activeTokens []string
 	for _, activeToken := range acct.ActiveTokens {

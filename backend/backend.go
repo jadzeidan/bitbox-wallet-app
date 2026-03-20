@@ -517,6 +517,7 @@ func (backend *Backend) Coin(code coinpkg.Code) (coinpkg.Coin, error) {
 	dbFolder := backend.arguments.CacheDirectoryPath()
 
 	erc20Token := erc20TokenByCode(code)
+	solToken := solTokenByCode(code)
 	btcFormatUnit := backend.config.AppConfig().Backend.BtcUnit
 	switch {
 	case code == coinpkg.CodeRBTC:
@@ -563,6 +564,7 @@ func (backend *Backend) Coin(code coinpkg.Code) (coinpkg.Coin, error) {
 			"SOL",
 			"SOL",
 			"https://solscan.io/tx/",
+			nil,
 		)
 	case code == coinpkg.CodeTSOL:
 		rpcClient := sol.NewRPCClient(
@@ -577,6 +579,7 @@ func (backend *Backend) Coin(code coinpkg.Code) (coinpkg.Coin, error) {
 			"TSOL",
 			"TSOL",
 			"https://solscan.io/tx/?cluster=devnet&tx=",
+			nil,
 		)
 	case erc20Token != nil:
 		etherScan := etherscan.NewEtherScan("1", backend.httpClient, backend.etherScanRateLimiter)
@@ -584,6 +587,35 @@ func (backend *Backend) Coin(code coinpkg.Code) (coinpkg.Coin, error) {
 			"https://etherscan.io/tx/",
 			etherScan,
 			erc20Token.token,
+		)
+	case solToken != nil:
+		var rpcURL string
+		var apiKey string
+		var blockExplorerPrefix string
+		var feeUnit string
+		switch solToken.parentCode {
+		case coinpkg.CodeSOL:
+			rpcURL = backend.config.AppConfig().Backend.SOL.RPCURL
+			apiKey = backend.config.AppConfig().Backend.SOL.APIKey
+			blockExplorerPrefix = "https://solscan.io/tx/"
+			feeUnit = "SOL"
+		case coinpkg.CodeTSOL:
+			rpcURL = backend.config.AppConfig().Backend.TSOL.RPCURL
+			apiKey = backend.config.AppConfig().Backend.TSOL.APIKey
+			blockExplorerPrefix = "https://solscan.io/tx/?cluster=devnet&tx="
+			feeUnit = "TSOL"
+		default:
+			return nil, errp.Newf("unknown Solana token parent code %s", solToken.parentCode)
+		}
+		rpcClient := sol.NewRPCClient(rpcURL, apiKey, backend.httpClient)
+		coin = sol.NewCoin(
+			rpcClient,
+			solToken.code,
+			solToken.name,
+			solToken.unit,
+			feeUnit,
+			blockExplorerPrefix,
+			solToken.token,
 		)
 	default:
 		return nil, errp.Newf("unknown coin code %s", code)

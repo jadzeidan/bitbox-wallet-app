@@ -77,6 +77,25 @@ export const SendResult = ({
           </ViewButtons>
         </View>
       );
+    case 'solanaTokenUnsupported':
+      return (
+        <View fullscreen textCenter verticallyCentered width="640px">
+          <ViewHeader />
+          <ViewContent withIcon="error">
+            <SubTitle>
+              {result.errorMessage}
+            </SubTitle>
+          </ViewContent>
+          <ViewButtons>
+            <Button primary onClick={() => navigate(`/account/${code}`)}>
+              {t('button.done')}
+            </Button>
+            <Button secondary onClick={() => onRetry()}>
+              {t('send.edit')}
+            </Button>
+          </ViewButtons>
+        </View>
+      );
     default:
       const { errorMessage } = result;
       return (

@@ -20,6 +20,31 @@ type Coin struct {
 	unit                  string
 	feeUnit               string
 	blockExplorerTxPrefix string
+	token                 *Token
+}
+
+// Token holds Solana SPL token details.
+type Token struct {
+	mint     string
+	decimals uint8
+}
+
+// NewToken creates a new token metadata object.
+func NewToken(mint string, decimals uint8) *Token {
+	return &Token{
+		mint:     mint,
+		decimals: decimals,
+	}
+}
+
+// Mint returns the token mint address.
+func (token *Token) Mint() string {
+	return token.mint
+}
+
+// Decimals returns the token decimals.
+func (token *Token) Decimals() uint8 {
+	return token.decimals
 }
 
 func NewCoin(
@@ -29,6 +54,7 @@ func NewCoin(
 	unit string,
 	feeUnit string,
 	blockExplorerTxPrefix string,
+	token *Token,
 ) *Coin {
 	return &Coin{
 		client:                client,
@@ -37,6 +63,7 @@ func NewCoin(
 		unit:                  unit,
 		feeUnit:               feeUnit,
 		blockExplorerTxPrefix: blockExplorerTxPrefix,
+		token:                 token,
 	}
 }
 
@@ -72,31 +99,34 @@ func (coin *Coin) GetFormatUnit(isFee bool) string {
 }
 
 // Decimals implements coin.Coin.
-func (coin *Coin) Decimals(bool) uint {
+func (coin *Coin) Decimals(isFee bool) uint {
+	if !isFee && coin.token != nil {
+		return uint(coin.token.Decimals())
+	}
 	return 9
 }
 
-func (coin *Coin) unitFactor() *big.Int {
-	return new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(coin.Decimals(false))), nil)
+func (coin *Coin) unitFactor(isFee bool) *big.Int {
+	return new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(coin.Decimals(isFee))), nil)
 }
 
 // FormatAmount implements coin.Coin.
 func (coin *Coin) FormatAmount(amount coinpkg.Amount, isFee bool) string {
-	factor := coin.unitFactor()
+	factor := coin.unitFactor(isFee)
 	s := new(big.Rat).SetFrac(amount.BigInt(), factor).FloatString(int(coin.Decimals(isFee)))
 	return strings.TrimRight(strings.TrimRight(s, "0"), ".")
 }
 
 // ToUnit implements coin.Coin.
 func (coin *Coin) ToUnit(amount coinpkg.Amount, isFee bool) float64 {
-	factor := coin.unitFactor()
+	factor := coin.unitFactor(isFee)
 	result, _ := new(big.Rat).SetFrac(amount.BigInt(), factor).Float64()
 	return result
 }
 
 // SetAmount implements coin.Coin.
 func (coin *Coin) SetAmount(amount *big.Rat, isFee bool) coinpkg.Amount {
-	factor := coin.unitFactor()
+	factor := coin.unitFactor(isFee)
 	lamports := new(big.Rat).Mul(amount, new(big.Rat).SetInt(factor))
 	lamportsInt, _ := new(big.Int).SetString(lamports.FloatString(0), 10)
 	return coinpkg.NewAmount(lamportsInt)
@@ -118,7 +148,15 @@ func (coin *Coin) BlockExplorerTransactionURLPrefix() string {
 
 // SmallestUnit implements coin.Coin.
 func (coin *Coin) SmallestUnit() string {
+	if coin.token != nil {
+		return "base units"
+	}
 	return "lamports"
+}
+
+// Token returns nil for native SOL accounts, and token metadata for SPL token accounts.
+func (coin *Coin) Token() *Token {
+	return coin.token
 }
 
 // Close implements coin.Coin.

@@ -15,7 +15,7 @@ import (
 //
 // There are different types of account codes:
 // - regular: for unified accounts
-// - erc20: for ERC20 token accounts
+// - token: for token accounts (e.g. ERC20/SPL)
 
 // regularAccountCode returns an account code based on a keystore root fingerprint, a coin code and
 // an account number.
@@ -23,8 +23,14 @@ func regularAccountCode(rootFingerprint []byte, coinCode coin.Code, accountNumbe
 	return accountsTypes.Code(fmt.Sprintf("v0-%x-%s-%d", rootFingerprint, coinCode, accountNumber))
 }
 
+// TokenAccountCode returns the account code used for token accounts.
+// It is derived from the account code of the parent account and the token code.
+func TokenAccountCode(parentAccountCode accountsTypes.Code, tokenCode string) accountsTypes.Code {
+	return accountsTypes.Code(fmt.Sprintf("%s-%s", parentAccountCode, tokenCode))
+}
+
 // Erc20AccountCode returns the account code used for an ERC20 token.
-// It is derived from the account code of the parent ETH account and the token code.
+// Kept for backwards compatibility with existing callers/tests.
 func Erc20AccountCode(ethereumAccountCode accountsTypes.Code, tokenCode string) accountsTypes.Code {
-	return accountsTypes.Code(fmt.Sprintf("%s-%s", ethereumAccountCode, tokenCode))
+	return TokenAccountCode(ethereumAccountCode, tokenCode)
 }

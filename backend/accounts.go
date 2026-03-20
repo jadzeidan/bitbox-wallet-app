@@ -131,6 +131,15 @@ func sortAccounts(accounts []accounts.Interface) {
 					return 5, true
 				}
 			}
+			solCoin, ok := c.(*sol.Coin)
+			if ok && solCoin.Token() != nil {
+				switch solToken := solTokenByCode(c.Code()); {
+				case solToken != nil && solToken.parentCode == coinpkg.CodeSOL:
+					return 6, true
+				case solToken != nil && solToken.parentCode == coinpkg.CodeTSOL:
+					return 7, true
+				}
+			}
 			return 0, false
 		}
 		order1, ok1 := getOrder(coin1)
@@ -155,17 +164,20 @@ func sortAccounts(accounts []accounts.Interface) {
 			if accountNumber1 != accountNumber2 {
 				return accountNumber1 < accountNumber2
 			}
-			// Same coin, same account number: for ETH coins, put regular account first, followed by
-			// its children ERC20 token accounts.
-			ethCoin1, ok1 := acct1.Coin().(*eth.Coin)
-			ethCoin2, ok2 := acct2.Coin().(*eth.Coin)
-			if ok1 && ok2 {
-				if ethCoin1.ERC20Token() != nil && ethCoin2.ERC20Token() != nil {
-					// ERC20 tokens sorted by code.
-					return acct1.Config().Config.Code < acct2.Config().Config.Code
-				}
-				// ETH parent account comes before its ERC20 tokens.
-				return ethCoin2.ERC20Token() != nil
+			// Same coin, same account number: parent account comes before children token accounts.
+			ethCoin1, okEth1 := acct1.Coin().(*eth.Coin)
+			ethCoin2, okEth2 := acct2.Coin().(*eth.Coin)
+			solCoin1, okSol1 := acct1.Coin().(*sol.Coin)
+			solCoin2, okSol2 := acct2.Coin().(*sol.Coin)
+			isToken1 := okEth1 && ethCoin1.ERC20Token() != nil || okSol1 && solCoin1.Token() != nil
+			isToken2 := okEth2 && ethCoin2.ERC20Token() != nil || okSol2 && solCoin2.Token() != nil
+			if isToken1 && isToken2 {
+				// Token children sorted by code.
+				return acct1.Config().Config.Code < acct2.Config().Config.Code
+			}
+			if isToken1 != isToken2 {
+				// Parent comes before its token children.
+				return !isToken1
 			}
 			// Unspecified account ordering: default to ordering by code.
 			return acct1.Config().Config.Code < acct2.Config().Config.Code
@@ -970,13 +982,33 @@ func (backend *Backend) SetAccountActive(accountCode accountsTypes.Code, active 
 	return nil
 }
 
-// SetTokenActive activates/deactivates an token on an account. `tokenCode` must be an ERC20 token
-// code, e.g. "eth-erc20-usdt", "eth-erc20-bat", etc.
+func tokenParentCode(tokenCode string) (coinpkg.Code, bool) {
+	if erc20Token := erc20TokenByCode(coinpkg.Code(tokenCode)); erc20Token != nil {
+		return coinpkg.CodeETH, true
+	}
+	if splToken := solTokenByCode(coinpkg.Code(tokenCode)); splToken != nil {
+		return splToken.parentCode, true
+	}
+	return "", false
+}
+
+// SetTokenActive activates/deactivates a token account on a parent account.
 func (backend *Backend) SetTokenActive(accountCode accountsTypes.Code, tokenCode string, active bool) error {
 	err := backend.config.ModifyAccountsConfig(func(accountsConfig *config.AccountsConfig) error {
 		acct := accountsConfig.Lookup(accountCode)
 		if acct == nil {
 			return errp.Newf("Could not find account %s", accountCode)
+		}
+		parentCode, ok := tokenParentCode(tokenCode)
+		if !ok {
+			return errp.Newf("Unknown token code: %s", tokenCode)
+		}
+		if acct.CoinCode != parentCode {
+			return errp.Newf(
+				"token %s does not belong to parent account coin %s",
+				tokenCode,
+				acct.CoinCode,
+			)
 		}
 		return acct.SetTokenActive(tokenCode, active)
 	})
@@ -1214,42 +1246,48 @@ func (backend *Backend) createAndAddAccount(coin coinpkg.Coin, persistedConfig *
 		account = backend.makeEthAccount(accountConfig, specificCoin, backend.httpClient, backend.log)
 		backend.addAccount(account)
 
-		// Load ERC20 tokens enabled with this Ethereum account.
-		for _, erc20TokenCode := range persistedConfig.ActiveTokens {
-			erc20CoinCode := coinpkg.Code(erc20TokenCode)
-			token, err := backend.Coin(erc20CoinCode)
-			if err != nil {
-				backend.log.WithError(err).Error("could not find ERC20 token")
-				continue
-			}
-			erc20AccountCode := Erc20AccountCode(persistedConfig.Code, erc20TokenCode)
-
-			tokenName := token.Name()
-
-			accountNumber, err := accountConfig.Config.SigningConfigurations[0].AccountNumber()
-			if err != nil {
-				backend.log.WithError(err).Error("could not get account number")
-			} else if accountNumber > 0 {
-				tokenName = fmt.Sprintf("%s %d", tokenName, accountNumber+1)
-			}
-
-			erc20Config := &config.Account{
-				Inactive:              persistedConfig.Inactive,
-				HiddenBecauseUnused:   persistedConfig.HiddenBecauseUnused,
-				CoinCode:              erc20CoinCode,
-				Name:                  tokenName,
-				Code:                  erc20AccountCode,
-				SigningConfigurations: persistedConfig.SigningConfigurations,
-				ActiveTokens:          nil,
-			}
-
-			backend.createAndAddAccount(token, erc20Config)
-		}
+		backend.loadActiveTokenAccounts(accountConfig, persistedConfig)
 	case *sol.Coin:
 		account = sol.NewAccount(accountConfig, specificCoin, backend.log)
 		backend.addAccount(account)
+		backend.loadActiveTokenAccounts(accountConfig, persistedConfig)
 	default:
 		panic("unknown coin type")
+	}
+}
+
+func (backend *Backend) loadActiveTokenAccounts(accountConfig *accounts.AccountConfig, persistedConfig *config.Account) {
+	for _, tokenCode := range persistedConfig.ActiveTokens {
+		parentCode, ok := tokenParentCode(tokenCode)
+		if !ok || parentCode != persistedConfig.CoinCode {
+			continue
+		}
+
+		tokenCoinCode := coinpkg.Code(tokenCode)
+		tokenCoin, err := backend.Coin(tokenCoinCode)
+		if err != nil {
+			backend.log.WithError(err).WithField("tokenCode", tokenCode).Error("could not find token coin")
+			continue
+		}
+
+		tokenName := tokenCoin.Name()
+		accountNumber, err := accountConfig.Config.SigningConfigurations[0].AccountNumber()
+		if err != nil {
+			backend.log.WithError(err).Error("could not get account number")
+		} else if accountNumber > 0 {
+			tokenName = fmt.Sprintf("%s %d", tokenName, accountNumber+1)
+		}
+
+		tokenConfig := &config.Account{
+			Inactive:              persistedConfig.Inactive,
+			HiddenBecauseUnused:   persistedConfig.HiddenBecauseUnused,
+			CoinCode:              tokenCoinCode,
+			Name:                  tokenName,
+			Code:                  TokenAccountCode(persistedConfig.Code, tokenCode),
+			SigningConfigurations: persistedConfig.SigningConfigurations,
+			ActiveTokens:          nil,
+		}
+		backend.createAndAddAccount(tokenCoin, tokenConfig)
 	}
 }
 

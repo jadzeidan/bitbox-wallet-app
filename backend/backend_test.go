@@ -92,6 +92,7 @@ func makeBitBox02Multi() *keystoremock.KeystoreMock {
 		},
 		ExtendedPublicKeyFunc: ksHelper.ExtendedPublicKey,
 		BTCXPubsFunc:          ksHelper.BTCXPubs,
+		SOLAddressFunc:        ksHelper.SOLAddress,
 	}
 }
 

@@ -84,6 +84,8 @@ const logoMap: LogoMap = {
   'eth-erc20-zrx': [ZRX, ZRX_GREY],
   'eth-erc20-wbtc': [WBTC, WBTC_GREY],
   'eth-erc20-paxg': [PAXG, PAXG_GREY],
+  'sol-spl-usdt': [USDT, USDT_GREY],
+  'sol-spl-usdc': [USDC, USDC_GREY],
 };
 
 type LogoProps = {

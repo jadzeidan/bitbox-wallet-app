@@ -4,13 +4,16 @@ package sol
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"math/big"
 	"os"
 	"path"
+	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -30,6 +33,26 @@ import (
 const defaultFeeLamports uint64 = 5000
 
 const systemProgramAddress = "11111111111111111111111111111111"
+const tokenProgramAddress = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+const associatedTokenProgramAddress = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+const rentSysvarAddress = "SysvarRent111111111111111111111111111111111"
+const programDerivedAddressMarker = "ProgramDerivedAddress"
+
+var fieldPrime = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 255), big.NewInt(19))
+var sqrtM1 = mustBigInt("19681161376707505956807079304988542015446066515923890162744021073123829784752")
+var edwardsD = mustBigInt("37095705934669439343138083508754565189542113879843219016388785533085940283555")
+
+type instructionAccount struct {
+	pubkey     [32]byte
+	isSigner   bool
+	isWritable bool
+}
+
+type compiledInstruction struct {
+	programID [32]byte
+	accounts  []instructionAccount
+	data      []byte
+}
 
 // TxProposal contains all data needed to sign and send a Solana transaction.
 type TxProposal struct {
@@ -124,6 +147,22 @@ func (account *Account) Initialize() error {
 }
 
 func (account *Account) refreshBalance() error {
+	if token := account.coin.Token(); token != nil {
+		tokenAccounts, err := account.coin.Client().GetTokenAccountsByOwner(
+			context.TODO(),
+			account.address.address,
+			token.Mint(),
+		)
+		if err != nil {
+			return err
+		}
+		total := big.NewInt(0)
+		for _, tokenAccount := range tokenAccounts {
+			total.Add(total, tokenAccount.AmountBigInt())
+		}
+		account.balance = coinpkg.NewAmount(total)
+		return nil
+	}
 	balance, err := account.coin.Client().GetBalance(context.TODO(), account.address.address)
 	if err != nil {
 		return err
@@ -174,7 +213,12 @@ func (account *Account) Transactions() (accounts.OrderedTransactions, error) {
 	account.txCacheMu.Unlock()
 
 	const limit = 50
-	signatures, err := account.coin.Client().GetSignaturesForAddress(context.TODO(), account.address.address, limit)
+	signatureAddresses, err := account.signatureLookupAddresses()
+	if err != nil {
+		account.SetOffline(err)
+		return nil, err
+	}
+	signatures, err := account.fetchSignatures(signatureAddresses, limit)
 	if err != nil {
 		account.SetOffline(err)
 		return nil, err
@@ -210,7 +254,80 @@ func (account *Account) Transactions() (accounts.OrderedTransactions, error) {
 	return ordered, nil
 }
 
+func (account *Account) signatureLookupAddresses() ([]string, error) {
+	if token := account.coin.Token(); token != nil {
+		tokenAccounts, err := account.coin.Client().GetTokenAccountsByOwner(
+			context.TODO(),
+			account.address.address,
+			token.Mint(),
+		)
+		if err != nil {
+			return nil, err
+		}
+		if len(tokenAccounts) == 0 {
+			return []string{}, nil
+		}
+		addresses := make([]string, 0, len(tokenAccounts))
+		for _, tokenAccount := range tokenAccounts {
+			if tokenAccount.Pubkey == "" {
+				continue
+			}
+			addresses = append(addresses, tokenAccount.Pubkey)
+		}
+		return addresses, nil
+	}
+	return []string{account.address.address}, nil
+}
+
+func (account *Account) fetchSignatures(addresses []string, limit int) ([]SignatureInfo, error) {
+	if len(addresses) == 0 {
+		return nil, nil
+	}
+	perAddressLimit := limit
+	if perAddressLimit < 1 {
+		perAddressLimit = 1
+	}
+	signaturesByID := make(map[string]SignatureInfo)
+	for _, address := range addresses {
+		signatures, err := account.coin.Client().GetSignaturesForAddress(context.TODO(), address, perAddressLimit)
+		if err != nil {
+			return nil, err
+		}
+		for _, signature := range signatures {
+			if signature.Signature == "" {
+				continue
+			}
+			existing, exists := signaturesByID[signature.Signature]
+			if !exists || signature.Slot > existing.Slot {
+				signaturesByID[signature.Signature] = signature
+			}
+		}
+	}
+
+	result := make([]SignatureInfo, 0, len(signaturesByID))
+	for _, signature := range signaturesByID {
+		result = append(result, signature)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Slot == result[j].Slot {
+			return result[i].Signature < result[j].Signature
+		}
+		return result[i].Slot > result[j].Slot
+	})
+	if limit > 0 && len(result) > limit {
+		result = result[:limit]
+	}
+	return result, nil
+}
+
 func (account *Account) txDataFromRPC(sig SignatureInfo, txInfo *TransactionInfo) *accounts.TransactionData {
+	if token := account.coin.Token(); token != nil {
+		return account.tokenTxDataFromRPC(sig, txInfo, token)
+	}
+	return account.nativeTxDataFromRPC(sig, txInfo)
+}
+
+func (account *Account) nativeTxDataFromRPC(sig SignatureInfo, txInfo *TransactionInfo) *accounts.TransactionData {
 	keys := txInfo.Transaction.Message.AccountKeys
 	var ourIndex = -1
 	for i, key := range keys {
@@ -264,6 +381,81 @@ func (account *Account) txDataFromRPC(sig SignatureInfo, txInfo *TransactionInfo
 	}
 
 	amount := coinpkg.NewAmount(new(big.Int).SetUint64(amountU64))
+	tx := account.makeTransactionData(sig, txInfo, status, txType, amount, feePtr, false)
+
+	displayAddress := account.address.address
+	if txType != accounts.TxTypeReceive {
+		displayAddress = account.nativeCounterpartyAddress(txInfo, txType)
+		if displayAddress == "" {
+			displayAddress = account.address.address
+		}
+	}
+	ours := displayAddress == account.address.address
+	tx.Addresses = []accounts.AddressAndAmount{{
+		Address: displayAddress,
+		Amount:  amount,
+		Ours:    ours,
+	}}
+	return tx
+}
+
+func (account *Account) tokenTxDataFromRPC(sig SignatureInfo, txInfo *TransactionInfo, token *Token) *accounts.TransactionData {
+	preAmount, postAmount := account.ownerTokenBalances(txInfo, token.Mint())
+	delta := new(big.Int).Sub(postAmount, preAmount)
+
+	var status accounts.TxStatus
+	switch {
+	case txInfo.Meta.Err != nil || sig.Err != nil:
+		status = accounts.TxStatusFailed
+	case sig.ConfirmationStatus == "processed":
+		status = accounts.TxStatusPending
+	default:
+		status = accounts.TxStatusComplete
+	}
+
+	var txType accounts.TxType
+	feeAmount := coinpkg.NewAmount(new(big.Int).SetUint64(txInfo.Meta.Fee))
+	feePtr := &feeAmount
+	amountBigInt := new(big.Int)
+	switch delta.Sign() {
+	case 1:
+		txType = accounts.TxTypeReceive
+		feePtr = nil
+		amountBigInt = delta
+	case -1:
+		txType = accounts.TxTypeSend
+		amountBigInt = new(big.Int).Neg(delta)
+	default:
+		return nil
+	}
+
+	amount := coinpkg.NewAmount(amountBigInt)
+	tx := account.makeTransactionData(sig, txInfo, status, txType, amount, feePtr, true)
+
+	displayAddress := account.address.address
+	if txType == accounts.TxTypeSend {
+		displayAddress = account.tokenCounterpartyAddress(txInfo, txType, token.Mint())
+		if displayAddress == "" {
+			displayAddress = account.address.address
+		}
+	}
+	tx.Addresses = []accounts.AddressAndAmount{{
+		Address: displayAddress,
+		Amount:  amount,
+		Ours:    displayAddress == account.address.address,
+	}}
+	return tx
+}
+
+func (account *Account) makeTransactionData(
+	sig SignatureInfo,
+	txInfo *TransactionInfo,
+	status accounts.TxStatus,
+	txType accounts.TxType,
+	amount coinpkg.Amount,
+	feePtr *coinpkg.Amount,
+	feeIsDifferentUnit bool,
+) *accounts.TransactionData {
 	var timestamp *time.Time
 	if txInfo.BlockTime != nil {
 		t := time.Unix(*txInfo.BlockTime, 0).UTC()
@@ -286,8 +478,9 @@ func (account *Account) txDataFromRPC(sig SignatureInfo, txInfo *TransactionInfo
 		return nil
 	}
 
-	tx := &accounts.TransactionData{
+	return &accounts.TransactionData{
 		Fee:                      feePtr,
+		FeeIsDifferentUnit:       feeIsDifferentUnit,
 		Timestamp:                timestamp,
 		TxID:                     txID,
 		InternalID:               txID,
@@ -298,24 +491,9 @@ func (account *Account) txDataFromRPC(sig SignatureInfo, txInfo *TransactionInfo
 		Type:                     txType,
 		Amount:                   amount,
 	}
-
-	displayAddress := account.address.address
-	if txType != accounts.TxTypeReceive {
-		displayAddress = account.counterpartyAddress(txInfo, txType)
-		if displayAddress == "" {
-			displayAddress = account.address.address
-		}
-	}
-	ours := displayAddress == account.address.address
-	tx.Addresses = []accounts.AddressAndAmount{{
-		Address: displayAddress,
-		Amount:  amount,
-		Ours:    ours,
-	}}
-	return tx
 }
 
-func (account *Account) counterpartyAddress(txInfo *TransactionInfo, txType accounts.TxType) string {
+func (account *Account) nativeCounterpartyAddress(txInfo *TransactionInfo, txType accounts.TxType) string {
 	our := account.address.address
 	for _, instruction := range txInfo.Transaction.Message.Instructions {
 		if instruction.Parsed == nil {
@@ -358,6 +536,84 @@ func (account *Account) counterpartyAddress(txInfo *TransactionInfo, txType acco
 		return pubkey
 	}
 	return ""
+}
+
+func (account *Account) tokenCounterpartyAddress(txInfo *TransactionInfo, txType accounts.TxType, mint string) string {
+	our := account.address.address
+	owners := account.tokenAccountOwners(txInfo, mint)
+	for _, instruction := range txInfo.Transaction.Message.Instructions {
+		if instruction.Parsed == nil {
+			continue
+		}
+		program := strings.ToLower(instruction.Program)
+		if program != "spl-token" && program != "spl-token-2022" {
+			continue
+		}
+		if instruction.Parsed.Type != "transfer" && instruction.Parsed.Type != "transferChecked" {
+			continue
+		}
+
+		sourceAccount, _ := infoString(instruction.Parsed.Info, "source")
+		destinationAccount, _ := infoString(instruction.Parsed.Info, "destination")
+		sourceOwner := owners[sourceAccount]
+		destinationOwner := owners[destinationAccount]
+		switch txType {
+		case accounts.TxTypeSend:
+			if sourceOwner == our && destinationOwner != "" {
+				return destinationOwner
+			}
+			if sourceOwner == our && destinationAccount != "" {
+				return destinationAccount
+			}
+		case accounts.TxTypeReceive:
+			if destinationOwner == our && sourceOwner != "" {
+				return sourceOwner
+			}
+		}
+	}
+	return ""
+}
+
+func (account *Account) ownerTokenBalances(txInfo *TransactionInfo, mint string) (*big.Int, *big.Int) {
+	pre := big.NewInt(0)
+	post := big.NewInt(0)
+	for _, balance := range txInfo.Meta.PreTokenBalances {
+		if balance.Owner == account.address.address && balance.Mint == mint {
+			if amount, ok := new(big.Int).SetString(balance.UITokenAmount.Amount, 10); ok {
+				pre.Add(pre, amount)
+			}
+		}
+	}
+	for _, balance := range txInfo.Meta.PostTokenBalances {
+		if balance.Owner == account.address.address && balance.Mint == mint {
+			if amount, ok := new(big.Int).SetString(balance.UITokenAmount.Amount, 10); ok {
+				post.Add(post, amount)
+			}
+		}
+	}
+	return pre, post
+}
+
+func (account *Account) tokenAccountOwners(txInfo *TransactionInfo, mint string) map[string]string {
+	owners := map[string]string{}
+	update := func(tokenBalances []rpcTokenBalance) {
+		for _, balance := range tokenBalances {
+			if balance.Mint != mint || balance.Owner == "" {
+				continue
+			}
+			if balance.AccountIndex < 0 || balance.AccountIndex >= len(txInfo.Transaction.Message.AccountKeys) {
+				continue
+			}
+			pubkey := txInfo.Transaction.Message.AccountKeys[balance.AccountIndex].Pubkey
+			if pubkey == "" {
+				continue
+			}
+			owners[pubkey] = balance.Owner
+		}
+	}
+	update(txInfo.Meta.PreTokenBalances)
+	update(txInfo.Meta.PostTokenBalances)
+	return owners
 }
 
 func infoString(info map[string]interface{}, key string) (string, bool) {
@@ -421,34 +677,277 @@ func encodeShortVec(n uint64) []byte {
 	}
 }
 
-func buildTransferInstructionData(lamports uint64) []byte {
+func buildSystemTransferInstructionData(lamports uint64) []byte {
 	data := make([]byte, 12)
 	binary.LittleEndian.PutUint32(data[0:4], 2) // SystemProgram::Transfer
 	binary.LittleEndian.PutUint64(data[4:12], lamports)
 	return data
 }
 
-func compileMessage(sender [32]byte, recipient [32]byte, recentBlockhash [32]byte, lamports uint64) []byte {
-	accountKeys := [][32]byte{
-		sender,
-		recipient,
-		{}, // System Program: 11111111111111111111111111111111
-	}
-	instructionData := buildTransferInstructionData(lamports)
+func buildTokenTransferInstructionData(amount uint64) []byte {
+	data := make([]byte, 9)
+	data[0] = 3 // Transfer
+	binary.LittleEndian.PutUint64(data[1:9], amount)
+	return data
+}
 
-	msg := []byte{1, 0, 1} // header
-	msg = append(msg, encodeShortVec(uint64(len(accountKeys)))...)
-	for _, key := range accountKeys {
-		msg = append(msg, key[:]...)
+func compileMessage(instructions []compiledInstruction, recentBlockhash [32]byte) []byte {
+	if len(instructions) == 0 {
+		return nil
 	}
-	msg = append(msg, recentBlockhash[:]...)
-	msg = append(msg, encodeShortVec(1)...) // one instruction
-	msg = append(msg, byte(2))              // program id index (system program)
-	msg = append(msg, encodeShortVec(2)...) // two account indices
-	msg = append(msg, byte(0), byte(1))
-	msg = append(msg, encodeShortVec(uint64(len(instructionData)))...)
-	msg = append(msg, instructionData...)
-	return msg
+
+	addedOrder := make([][32]byte, 0)
+	accountMeta := map[[32]byte]instructionAccount{}
+	addAccount := func(account instructionAccount) {
+		existing, exists := accountMeta[account.pubkey]
+		if !exists {
+			addedOrder = append(addedOrder, account.pubkey)
+			accountMeta[account.pubkey] = account
+			return
+		}
+		existing.isSigner = existing.isSigner || account.isSigner
+		existing.isWritable = existing.isWritable || account.isWritable
+		accountMeta[account.pubkey] = existing
+	}
+
+	for _, instruction := range instructions {
+		for _, account := range instruction.accounts {
+			addAccount(account)
+		}
+		addAccount(instructionAccount{
+			pubkey:     instruction.programID,
+			isSigner:   false,
+			isWritable: false,
+		})
+	}
+
+	var signedWritable []instructionAccount
+	var signedReadonly []instructionAccount
+	var unsignedWritable []instructionAccount
+	var unsignedReadonly []instructionAccount
+
+	for _, pubkey := range addedOrder {
+		account := accountMeta[pubkey]
+		switch {
+		case account.isSigner && account.isWritable:
+			signedWritable = append(signedWritable, account)
+		case account.isSigner && !account.isWritable:
+			signedReadonly = append(signedReadonly, account)
+		case !account.isSigner && account.isWritable:
+			unsignedWritable = append(unsignedWritable, account)
+		default:
+			unsignedReadonly = append(unsignedReadonly, account)
+		}
+	}
+
+	orderedAccounts := append([]instructionAccount{}, signedWritable...)
+	orderedAccounts = append(orderedAccounts, signedReadonly...)
+	orderedAccounts = append(orderedAccounts, unsignedWritable...)
+	orderedAccounts = append(orderedAccounts, unsignedReadonly...)
+
+	accountIndices := make(map[[32]byte]byte, len(orderedAccounts))
+	for i, account := range orderedAccounts {
+		accountIndices[account.pubkey] = byte(i)
+	}
+
+	message := []byte{
+		byte(len(signedWritable) + len(signedReadonly)),
+		byte(len(signedReadonly)),
+		byte(len(unsignedReadonly)),
+	}
+
+	message = append(message, encodeShortVec(uint64(len(orderedAccounts)))...)
+	for _, account := range orderedAccounts {
+		message = append(message, account.pubkey[:]...)
+	}
+	message = append(message, recentBlockhash[:]...)
+
+	message = append(message, encodeShortVec(uint64(len(instructions)))...)
+	for _, instruction := range instructions {
+		programIndex := accountIndices[instruction.programID]
+		message = append(message, programIndex)
+		message = append(message, encodeShortVec(uint64(len(instruction.accounts)))...)
+		for _, account := range instruction.accounts {
+			message = append(message, accountIndices[account.pubkey])
+		}
+		message = append(message, encodeShortVec(uint64(len(instruction.data)))...)
+		message = append(message, instruction.data...)
+	}
+	return message
+}
+
+func mustBigInt(value string) *big.Int {
+	result, ok := new(big.Int).SetString(value, 10)
+	if !ok {
+		panic("invalid big int constant")
+	}
+	return result
+}
+
+func isOnEd25519Curve(pubkey [32]byte) bool {
+	yBytes := pubkey
+	sign := (yBytes[31] >> 7) & 1
+	yBytes[31] &= 0x7f
+	reverseInPlace(yBytes[:])
+	y := new(big.Int).SetBytes(yBytes[:])
+	if y.Cmp(fieldPrime) >= 0 {
+		return false
+	}
+
+	y2 := new(big.Int).Mul(y, y)
+	y2.Mod(y2, fieldPrime)
+
+	u := new(big.Int).Sub(y2, big.NewInt(1))
+	u.Mod(u, fieldPrime)
+
+	v := new(big.Int).Mul(edwardsD, y2)
+	v.Add(v, big.NewInt(1))
+	v.Mod(v, fieldPrime)
+	if v.Sign() == 0 {
+		return false
+	}
+
+	vInv := new(big.Int).ModInverse(v, fieldPrime)
+	if vInv == nil {
+		return false
+	}
+	x2 := new(big.Int).Mul(u, vInv)
+	x2.Mod(x2, fieldPrime)
+
+	exp := new(big.Int).Add(fieldPrime, big.NewInt(3))
+	exp.Rsh(exp, 3)
+	x := new(big.Int).Exp(x2, exp, fieldPrime)
+
+	vx2 := new(big.Int).Mul(v, new(big.Int).Mul(x, x))
+	vx2.Mod(vx2, fieldPrime)
+	if vx2.Cmp(u) != 0 {
+		negU := new(big.Int).Neg(u)
+		negU.Mod(negU, fieldPrime)
+		if vx2.Cmp(negU) != 0 {
+			return false
+		}
+		x.Mul(x, sqrtM1)
+		x.Mod(x, fieldPrime)
+	}
+
+	if x.Bit(0) != uint(sign) {
+		x.Sub(fieldPrime, x)
+	}
+	if x.Sign() == 0 && sign == 1 {
+		return false
+	}
+	return true
+}
+
+func reverseInPlace(bytes []byte) {
+	for left, right := 0, len(bytes)-1; left < right; left, right = left+1, right-1 {
+		bytes[left], bytes[right] = bytes[right], bytes[left]
+	}
+}
+
+func findProgramAddress(seeds [][]byte, programID [32]byte) ([32]byte, error) {
+	var derived [32]byte
+	seedPrefix := []byte{}
+	for _, seed := range seeds {
+		seedPrefix = append(seedPrefix, seed...)
+	}
+	for bump := 255; bump >= 0; bump-- {
+		input := make([]byte, 0, len(seedPrefix)+1+32+len(programDerivedAddressMarker))
+		input = append(input, seedPrefix...)
+		input = append(input, byte(bump))
+		input = append(input, programID[:]...)
+		input = append(input, []byte(programDerivedAddressMarker)...)
+		hash := sha256.Sum256(input)
+		if !isOnEd25519Curve(hash) {
+			return hash, nil
+		}
+	}
+	return derived, errp.New("unable to derive program address")
+}
+
+func associatedTokenAddress(owner [32]byte, mint [32]byte) ([32]byte, error) {
+	associatedTokenProgram, err := decodePubkey(associatedTokenProgramAddress)
+	if err != nil {
+		return [32]byte{}, err
+	}
+	tokenProgram, err := decodePubkey(tokenProgramAddress)
+	if err != nil {
+		return [32]byte{}, err
+	}
+	seeds := [][]byte{
+		owner[:],
+		tokenProgram[:],
+		mint[:],
+	}
+	return findProgramAddress(seeds, associatedTokenProgram)
+}
+
+func createAssociatedTokenAccountInstruction(
+	payer [32]byte,
+	associatedTokenAccount [32]byte,
+	owner [32]byte,
+	mint [32]byte,
+) (compiledInstruction, error) {
+	associatedTokenProgram, err := decodePubkey(associatedTokenProgramAddress)
+	if err != nil {
+		return compiledInstruction{}, err
+	}
+	systemProgram, err := decodePubkey(systemProgramAddress)
+	if err != nil {
+		return compiledInstruction{}, err
+	}
+	tokenProgram, err := decodePubkey(tokenProgramAddress)
+	if err != nil {
+		return compiledInstruction{}, err
+	}
+	rentProgram, err := decodePubkey(rentSysvarAddress)
+	if err != nil {
+		return compiledInstruction{}, err
+	}
+	return compiledInstruction{
+		programID: associatedTokenProgram,
+		accounts: []instructionAccount{
+			{pubkey: payer, isSigner: true, isWritable: true},
+			{pubkey: associatedTokenAccount, isSigner: false, isWritable: true},
+			{pubkey: owner, isSigner: false, isWritable: false},
+			{pubkey: mint, isSigner: false, isWritable: false},
+			{pubkey: systemProgram, isSigner: false, isWritable: false},
+			{pubkey: tokenProgram, isSigner: false, isWritable: false},
+			{pubkey: rentProgram, isSigner: false, isWritable: false},
+		},
+		data: []byte{},
+	}, nil
+}
+
+func tokenTransferInstruction(source [32]byte, destination [32]byte, authority [32]byte, amount uint64) (compiledInstruction, error) {
+	tokenProgram, err := decodePubkey(tokenProgramAddress)
+	if err != nil {
+		return compiledInstruction{}, err
+	}
+	return compiledInstruction{
+		programID: tokenProgram,
+		accounts: []instructionAccount{
+			{pubkey: source, isSigner: false, isWritable: true},
+			{pubkey: destination, isSigner: false, isWritable: true},
+			{pubkey: authority, isSigner: true, isWritable: true},
+		},
+		data: buildTokenTransferInstructionData(amount),
+	}, nil
+}
+
+func systemTransferInstruction(sender [32]byte, recipient [32]byte, amount uint64) (compiledInstruction, error) {
+	systemProgram, err := decodePubkey(systemProgramAddress)
+	if err != nil {
+		return compiledInstruction{}, err
+	}
+	return compiledInstruction{
+		programID: systemProgram,
+		accounts: []instructionAccount{
+			{pubkey: sender, isSigner: true, isWritable: true},
+			{pubkey: recipient, isSigner: false, isWritable: true},
+		},
+		data: buildSystemTransferInstructionData(amount),
+	}, nil
 }
 
 func serializeSignedTx(message []byte, signature []byte) ([]byte, error) {
@@ -462,6 +961,35 @@ func serializeSignedTx(message []byte, signature []byte) ([]byte, error) {
 }
 
 func (account *Account) newTx(args *accounts.TxProposalArgs) (*TxProposal, error) {
+	if account.coin.Token() != nil {
+		return account.newTokenTx(args)
+	}
+	return account.newNativeTx(args)
+}
+
+func (account *Account) fetchRecentBlockhash() ([32]byte, error) {
+	var recentBlockhash [32]byte
+	blockhashStr, err := account.coin.Client().GetLatestBlockhash(context.TODO())
+	if err != nil {
+		return recentBlockhash, errors.ErrFeesNotAvailable
+	}
+	blockhashDecoded := base58.Decode(blockhashStr)
+	if len(blockhashDecoded) != 32 {
+		return recentBlockhash, errors.ErrFeesNotAvailable
+	}
+	copy(recentBlockhash[:], blockhashDecoded)
+	return recentBlockhash, nil
+}
+
+func (account *Account) estimateFee(message []byte) uint64 {
+	feeLamports, err := account.coin.Client().GetFeeForMessage(context.TODO(), message)
+	if err != nil || feeLamports == 0 {
+		return defaultFeeLamports
+	}
+	return feeLamports
+}
+
+func (account *Account) newNativeTx(args *accounts.TxProposalArgs) (*TxProposal, error) {
 	recipient, err := decodePubkey(args.RecipientAddress)
 	if err != nil {
 		return nil, err
@@ -472,23 +1000,15 @@ func (account *Account) newTx(args *accounts.TxProposalArgs) (*TxProposal, error
 	}
 	balance := account.balance.BigInt().Uint64()
 
-	blockhashStr, err := account.coin.Client().GetLatestBlockhash(context.TODO())
+	recentBlockhash, err := account.fetchRecentBlockhash()
 	if err != nil {
-		return nil, errors.ErrFeesNotAvailable
+		return nil, err
 	}
-	blockhashDecoded := base58.Decode(blockhashStr)
-	if len(blockhashDecoded) != 32 {
-		return nil, errors.ErrFeesNotAvailable
+	dryInstruction, err := systemTransferInstruction(sender, recipient, 0)
+	if err != nil {
+		return nil, err
 	}
-	var recentBlockhash [32]byte
-	copy(recentBlockhash[:], blockhashDecoded)
-
-	// Compute fee from fully compiled message. Fallback to a conservative default.
-	dryMessage := compileMessage(sender, recipient, recentBlockhash, 0)
-	feeLamports, err := account.coin.Client().GetFeeForMessage(context.TODO(), dryMessage)
-	if err != nil || feeLamports == 0 {
-		feeLamports = defaultFeeLamports
-	}
+	feeLamports := account.estimateFee(compileMessage([]compiledInstruction{dryInstruction}, recentBlockhash))
 
 	amountLamports := uint64(0)
 	if args.Amount.SendAll() {
@@ -497,7 +1017,7 @@ func (account *Account) newTx(args *accounts.TxProposalArgs) (*TxProposal, error
 		}
 		amountLamports = balance - feeLamports
 	} else {
-		amount, err := args.Amount.Amount(account.coin.unitFactor(), false)
+		amount, err := args.Amount.Amount(account.coin.unitFactor(false), false)
 		if err != nil {
 			return nil, err
 		}
@@ -512,12 +1032,195 @@ func (account *Account) newTx(args *accounts.TxProposalArgs) (*TxProposal, error
 		return nil, errors.ErrInsufficientFunds
 	}
 
-	message := compileMessage(sender, recipient, recentBlockhash, amountLamports)
+	transferInstruction, err := systemTransferInstruction(sender, recipient, amountLamports)
+	if err != nil {
+		return nil, err
+	}
+	message := compileMessage([]compiledInstruction{transferInstruction}, recentBlockhash)
 	return &TxProposal{
 		Keypath: account.signingConfiguration.AbsoluteKeypath(),
 		Message: message,
 		Fee:     feeLamports,
 		Value:   amountLamports,
+	}, nil
+}
+
+func (account *Account) newTokenTx(args *accounts.TxProposalArgs) (*TxProposal, error) {
+	token := account.coin.Token()
+	if token == nil {
+		return nil, errp.New("token metadata missing")
+	}
+
+	senderOwner, err := decodePubkey(account.address.address)
+	if err != nil {
+		return nil, errors.ErrInvalidAddress
+	}
+	recipientOwner, err := decodePubkey(args.RecipientAddress)
+	if err != nil {
+		return nil, err
+	}
+
+	sourceTokenAccounts, err := account.coin.Client().GetTokenAccountsByOwner(
+		context.TODO(),
+		account.address.address,
+		token.Mint(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	if len(sourceTokenAccounts) == 0 {
+		return nil, errors.ErrInsufficientFunds
+	}
+
+	sourceTokenPubkey := [32]byte{}
+	sourceBalance := big.NewInt(0)
+	selectSourceTokenAccount := func(amountUnits *big.Int) error {
+		for _, tokenAccount := range sourceTokenAccounts {
+			amount := tokenAccount.AmountBigInt()
+			if amount.Sign() <= 0 {
+				continue
+			}
+			if amountUnits != nil && amount.Cmp(amountUnits) < 0 {
+				continue
+			}
+			tokenPubkey, err := decodePubkey(tokenAccount.Pubkey)
+			if err != nil {
+				continue
+			}
+			sourceTokenPubkey = tokenPubkey
+			sourceBalance = amount
+			return nil
+		}
+		return errors.ErrInsufficientFunds
+	}
+
+	destinationTokenAccounts, err := account.coin.Client().GetTokenAccountsByOwner(context.TODO(), args.RecipientAddress, token.Mint())
+	if err != nil {
+		return nil, err
+	}
+	destinationTokenPubkey := [32]byte{}
+	createAssociatedTokenAccount := false
+	if len(destinationTokenAccounts) > 0 {
+		destinationTokenPubkey, err = decodePubkey(destinationTokenAccounts[0].Pubkey)
+		if err != nil {
+			return nil, errors.ErrInvalidAddress
+		}
+	} else {
+		mintPubkey, err := decodePubkey(token.Mint())
+		if err != nil {
+			return nil, errors.ErrInvalidAddress
+		}
+		destinationTokenPubkey, err = associatedTokenAddress(recipientOwner, mintPubkey)
+		if err != nil {
+			return nil, err
+		}
+		createAssociatedTokenAccount = true
+	}
+
+	prepareInstructions := func(amount uint64, recentBlockhash [32]byte) ([]compiledInstruction, uint64, error) {
+		instructions := make([]compiledInstruction, 0, 2)
+		if createAssociatedTokenAccount {
+			mintPubkey, err := decodePubkey(token.Mint())
+			if err != nil {
+				return nil, 0, errors.ErrInvalidAddress
+			}
+			createInstruction, err := createAssociatedTokenAccountInstruction(
+				senderOwner,
+				destinationTokenPubkey,
+				recipientOwner,
+				mintPubkey,
+			)
+			if err != nil {
+				return nil, 0, err
+			}
+			instructions = append(instructions, createInstruction)
+		}
+		transferInstruction, err := tokenTransferInstruction(
+			sourceTokenPubkey,
+			destinationTokenPubkey,
+			senderOwner,
+			amount,
+		)
+		if err != nil {
+			return nil, 0, err
+		}
+		instructions = append(instructions, transferInstruction)
+		fee := account.estimateFee(compileMessage(instructions, recentBlockhash))
+		return instructions, fee, nil
+	}
+
+	amountUnits := big.NewInt(0)
+	if args.Amount.SendAll() {
+		// Determine amount after we know the exact fee and source token account.
+		if err := selectSourceTokenAccount(nil); err != nil {
+			return nil, err
+		}
+		amountUnits = new(big.Int).Set(sourceBalance)
+	} else {
+		amount, err := args.Amount.Amount(account.coin.unitFactor(false), false)
+		if err != nil {
+			return nil, err
+		}
+		if amount.BigInt().Sign() <= 0 {
+			return nil, errors.ErrInvalidAmount
+		}
+		amountUnits = amount.BigInt()
+	}
+
+	solBalance, err := account.coin.Client().GetBalance(context.TODO(), account.address.address)
+	if err != nil {
+		return nil, errors.ErrFeesNotAvailable
+	}
+
+	recentBlockhash, err := account.fetchRecentBlockhash()
+	if err != nil {
+		return nil, err
+	}
+
+	var instructions []compiledInstruction
+	feeLamports := uint64(0)
+	if args.Amount.SendAll() {
+		amountU64, parseErr := strconv.ParseUint(amountUnits.String(), 10, 64)
+		if parseErr != nil {
+			return nil, errors.ErrInvalidAmount
+		}
+		instructions, feeLamports, err = prepareInstructions(amountU64, recentBlockhash)
+		if err != nil {
+			return nil, err
+		}
+		if solBalance < feeLamports {
+			return nil, errors.ErrInsufficientFunds
+		}
+	} else {
+		if err := selectSourceTokenAccount(amountUnits); err != nil {
+			return nil, err
+		}
+		amountU64, parseErr := strconv.ParseUint(amountUnits.String(), 10, 64)
+		if parseErr != nil {
+			return nil, errors.ErrInvalidAmount
+		}
+		instructions, feeLamports, err = prepareInstructions(amountU64, recentBlockhash)
+		if err != nil {
+			return nil, err
+		}
+		if solBalance < feeLamports {
+			return nil, errors.ErrInsufficientFunds
+		}
+	}
+
+	if sourceBalance.Sign() <= 0 {
+		return nil, errors.ErrInsufficientFunds
+	}
+	message := compileMessage(instructions, recentBlockhash)
+	amountU64, err := strconv.ParseUint(amountUnits.String(), 10, 64)
+	if err != nil {
+		return nil, errors.ErrInvalidAmount
+	}
+	return &TxProposal{
+		Keypath: account.signingConfiguration.AbsoluteKeypath(),
+		Message: message,
+		Fee:     feeLamports,
+		Value:   amountU64,
 	}, nil
 }
 
@@ -538,7 +1241,11 @@ func (account *Account) TxProposal(args *accounts.TxProposalArgs) (coinpkg.Amoun
 
 	amount := coinpkg.NewAmount(new(big.Int).SetUint64(txProposal.Value))
 	fee := coinpkg.NewAmount(new(big.Int).SetUint64(txProposal.Fee))
-	return amount, fee, coinpkg.SumAmounts(amount, fee), nil
+	total := coinpkg.SumAmounts(amount, fee)
+	if account.coin.Token() != nil {
+		total = amount
+	}
+	return amount, fee, total, nil
 }
 
 // SendTx implements accounts.Interface.

@@ -44,7 +44,7 @@ export const ManageAccounts = ({ accounts, devices, hasAccounts }: Props) => {
   const [showTokens, setShowTokens] = useState<TShowTokens>({});
   const [currentlyEditedAccount, setCurrentlyEditedAccount] = useState<accountAPI.TAccount | undefined>(undefined);
 
-  const erc20Tokens: Readonly<accountAPI.Terc20Token[]> = [
+  const ethTokens: Readonly<accountAPI.Terc20Token[]> = [
     { code: 'eth-erc20-usdt', name: 'Tether USD', unit: 'USDT' },
     { code: 'eth-erc20-usdc', name: 'USD Coin', unit: 'USDC' },
     { code: 'eth-erc20-link', name: 'Chainlink', unit: 'LINK' },
@@ -55,12 +55,17 @@ export const ManageAccounts = ({ accounts, devices, hasAccounts }: Props) => {
     { code: 'eth-erc20-paxg', name: 'Pax Gold', unit: 'PAXG' },
     { code: 'eth-erc20-dai0x6b17', name: 'Dai', unit: 'DAI' },
   ];
+  const solTokens: Readonly<accountAPI.Terc20Token[]> = [
+    { code: 'sol-spl-usdt', name: 'Tether USD', unit: 'USDT' },
+    { code: 'sol-spl-usdc', name: 'USD Coin', unit: 'USDC' },
+  ];
 
   const renderTokens = (
-    ethAccountCode: accountAPI.AccountCode,
+    accountCode: accountAPI.AccountCode,
+    tokens: Readonly<accountAPI.Terc20Token[]>,
     activeTokens?: accountAPI.TActiveToken[],
   ) => {
-    return erc20Tokens.map(token => {
+    return tokens.map(token => {
       const activeToken = (activeTokens || []).find(t => t.tokenCode === token.code);
       const active = activeToken !== undefined;
       return (
@@ -89,18 +94,18 @@ export const ManageAccounts = ({ accounts, devices, hasAccounts }: Props) => {
             checked={active}
             className={style.toggle}
             id={token.code}
-            onChange={() => toggleToken(ethAccountCode, token.code, !active)} />
+            onChange={() => toggleToken(accountCode, token.code, !active)} />
         </div>
       );
     });
   };
 
   const toggleToken = (
-    ethAccountCode: accountAPI.AccountCode,
-    tokenCode: accountAPI.ERC20CoinCode,
+    accountCode: accountAPI.AccountCode,
+    tokenCode: accountAPI.TokenCoinCode,
     active: boolean,
   ) => {
-    backendAPI.setTokenActive(ethAccountCode, tokenCode, active).then(({ success, errorMessage }) => {
+    backendAPI.setTokenActive(accountCode, tokenCode, active).then(({ success, errorMessage }) => {
       if (!success && errorMessage) {
         alertUser(errorMessage);
       }
@@ -151,6 +156,7 @@ export const ManageAccounts = ({ accounts, devices, hasAccounts }: Props) => {
     return accounts.filter(account => !account.isToken).map(account => {
       const active = account.active;
       const tokensVisible = showTokens[account.code];
+      const tokenList = account.coinCode === 'eth' ? ethTokens : account.coinCode === 'sol' ? solTokens : [];
       return (
         <div key={account.code} className={style.setting}>
           <div
@@ -188,13 +194,13 @@ export const ManageAccounts = ({ accounts, devices, hasAccounts }: Props) => {
               </span>
             </Button>
           </div>
-          {active && account.coinCode === 'eth' ? (
+          {active && tokenList.length > 0 ? (
             <div className={style.tokenSection}>
               <div className={`
                 ${style.tokenContainer || ''}
                 ${tokensVisible && style.tokenContainerOpen || ''}
               `}>
-                {renderTokens(account.code, account.activeTokens)}
+                {renderTokens(account.code, tokenList, account.activeTokens)}
               </div>
               <Button
                 className={style.expandBtn}

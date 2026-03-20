@@ -23,6 +23,7 @@ import (
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/coins/coin"
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/coins/eth"
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/coins/eth/etherscan"
+	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/coins/sol"
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/keystore"
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/signing"
 	"github.com/BitBoxSwiss/bitbox-wallet-app/util/config"
@@ -464,9 +465,27 @@ func (handlers *Handlers) postAccountSendTx(r *http.Request) (interface{}, error
 		if strings.Contains(err.Error(), etherscan.ERC20GasErr) {
 			result["errorCode"] = errors.ErrERC20InsufficientGasFunds.Error()
 		}
+		if isSolanaTokenUnsupportedSigningErr(handlers.account, err) {
+			result["errorCode"] = "solanaTokenUnsupported"
+			result["errorMessage"] = "Connected BitBox02 firmware does not support signing Solana token transfers yet. SOL transfers are supported."
+		}
 		return result, nil
 	}
 	return map[string]interface{}{"success": true, "txId": txID}, nil
+}
+
+func isSolanaTokenUnsupportedSigningErr(account accounts.Interface, err error) bool {
+	if err == nil {
+		return false
+	}
+	solCoin, ok := account.Coin().(*sol.Coin)
+	if !ok || solCoin.Token() == nil {
+		return false
+	}
+	errMsg := strings.ToLower(err.Error())
+	return strings.Contains(errMsg, "invalid input") ||
+		strings.Contains(errMsg, "solanasigntransaction") ||
+		strings.Contains(errMsg, "querysol")
 }
 
 func txProposalError(err error) (interface{}, error) {

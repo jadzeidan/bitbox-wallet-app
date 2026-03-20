@@ -15,13 +15,17 @@ export type Fiat = 'AUD' | 'BRL' | 'BTC' | 'CAD' | 'CHF' | 'CNY' | 'CZK' | 'EUR'
 
 export type ConversionUnit = Fiat | 'sat';
 
-export type CoinUnit = 'BTC' | 'sat' | 'LTC' | 'ETH' | 'TBTC' | 'RBTC' | 'tsat' | 'TLTC' | 'SEPETH' | 'SOL' | 'TSOL';
+export type CoinUnit = 'BTC' | 'sat' | 'LTC' | 'ETH' | 'TBTC' | 'RBTC' | 'tsat' | 'TLTC' | 'SEPETH' | 'SOL' | 'TSOL' | TokenUnit;
 
 export type ERC20TokenUnit = 'USDT' | 'USDC' | 'LINK' | 'BAT' | 'MKR' | 'ZRX' | 'WBTC' | 'PAXG' | 'DAI';
+export type SolanaTokenUnit = 'USDT' | 'USDC';
+export type TokenUnit = ERC20TokenUnit | SolanaTokenUnit;
 
 export type ERC20CoinCode = 'erc20Test' | 'eth-erc20-usdt' | 'eth-erc20-usdc' | 'eth-erc20-link' | 'eth-erc20-bat' | 'eth-erc20-mkr' | 'eth-erc20-zrx' | 'eth-erc20-wbtc' | 'eth-erc20-paxg' | 'eth-erc20-dai0x6b17';
+export type SolanaTokenCoinCode = 'sol-spl-usdt' | 'sol-spl-usdc';
+export type TokenCoinCode = ERC20CoinCode | SolanaTokenCoinCode;
 
-export type CoinCode = NativeCoinCode | ERC20CoinCode;
+export type CoinCode = NativeCoinCode | TokenCoinCode;
 
 export type FiatWithDisplayName = {
   currency: Fiat;
@@ -29,13 +33,13 @@ export type FiatWithDisplayName = {
 };
 
 export type Terc20Token = {
-  code: ERC20CoinCode;
+  code: TokenCoinCode;
   name: string;
-  unit: ERC20TokenUnit;
+  unit: TokenUnit;
 };
 
 export type TActiveToken = {
-  tokenCode: ERC20CoinCode;
+  tokenCode: TokenCoinCode;
   accountCode: AccountCode;
 };
 

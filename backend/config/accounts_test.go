@@ -66,7 +66,7 @@ func TestLookupByXpub(t *testing.T) {
 }
 
 func TestSetTokenActive(t *testing.T) {
-	// not an ETH account.
+	// not a token parent account.
 	require.Error(t, (&Account{CoinCode: coin.CodeSEPETH}).SetTokenActive("TOKEN", true))
 
 	acct := &Account{
@@ -79,6 +79,12 @@ func TestSetTokenActive(t *testing.T) {
 
 	require.NoError(t, acct.SetTokenActive("TOKEN-1", false))
 	require.Equal(t, []string{"TOKEN-2"}, acct.ActiveTokens)
+
+	solAcct := &Account{
+		CoinCode: coin.CodeSOL,
+	}
+	require.NoError(t, solAcct.SetTokenActive("TOKEN-1", true))
+	require.Equal(t, []string{"TOKEN-1"}, solAcct.ActiveTokens)
 }
 
 func TestGetOrAddKeystore(t *testing.T) {
