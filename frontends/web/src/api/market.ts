@@ -7,6 +7,26 @@ export const getMarketRegionCodes = (): Promise<string[]> => {
   return apiGet('market/region-codes');
 };
 
+export type TMarketNewsArticle = {
+  publishedAt: string;
+  summary: string;
+  title: string;
+  url: string;
+  source: string;
+};
+
+export type TMarketNewsResponse = {
+  articles: TMarketNewsArticle[];
+  success: true;
+} | {
+  success: false;
+  errorMessage?: string;
+};
+
+export const getMarketNews = (): Promise<TMarketNewsResponse> => {
+  return apiGet('market/news');
+};
+
 export type TPaymentMethod = 'card' | 'bank-transfer' | 'bancontact' | 'sofort';
 
 export type TMarketDeal = {

@@ -234,6 +234,7 @@ func NewHandlers(
 	getAPIRouterNoError(apiRouter)("/electrum/check", handlers.postElectrumCheck).Methods("POST")
 	getAPIRouterNoError(apiRouter)("/socksproxy/check", handlers.postSocksProxyCheck).Methods("POST")
 	getAPIRouterNoError(apiRouter)("/market/region-codes", handlers.getMarketRegionCodes).Methods("GET")
+	getAPIRouterNoError(apiRouter)("/market/news", handlers.getMarketNews).Methods("GET")
 	getAPIRouterNoError(apiRouter)("/market/deals/{action}/{code}", handlers.getMarketDeals).Methods("GET")
 	getAPIRouterNoError(apiRouter)("/market/vendors/{code}", handlers.getMarketVendors).Methods("GET")
 	getAPIRouterNoError(apiRouter)("/market/btcdirect-otc/supported/{code}", handlers.getMarketBtcDirectOTCSupported).Methods("GET")
@@ -1233,6 +1234,28 @@ func (handlers *Handlers) getSupportedCoins(*http.Request) interface{} {
 
 func (handlers *Handlers) getMarketRegionCodes(r *http.Request) interface{} {
 	return market.RegionCodes
+}
+
+func (handlers *Handlers) getMarketNews(r *http.Request) interface{} {
+	type response struct {
+		Articles     []market.NewsArticle `json:"articles,omitempty"`
+		ErrorMessage string               `json:"errorMessage,omitempty"`
+		Success      bool                 `json:"success"`
+	}
+
+	articles, err := market.BitcoinNews(handlers.backend.HTTPClient())
+	if err != nil {
+		handlers.log.Error(err)
+		return response{
+			ErrorMessage: err.Error(),
+			Success:      false,
+		}
+	}
+
+	return response{
+		Articles: articles,
+		Success:  true,
+	}
 }
 
 func (handlers *Handlers) postBitsuranceLookup(r *http.Request) interface{} {

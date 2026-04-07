@@ -101,6 +101,13 @@ var fixedURLWhitelist = []string{
 	"https://bitcoincore.org/en/2016/01/26/segwit-benefits/",
 	"https://en.bitcoin.it/wiki/Bech32_adoption",
 	"https://github.com/bitcoin/bips/",
+	// Market news articles.
+	"https://bitcoinmagazine.com/",
+	"https://www.bitcoinmagazine.com/",
+	"https://coindesk.com/",
+	"https://www.coindesk.com/",
+	"https://newsbtc.com/",
+	"https://www.newsbtc.com/",
 	// iOS app settings
 	"app-settings:",
 	// Others

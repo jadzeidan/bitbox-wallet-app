@@ -39,6 +39,7 @@ import { BitsuranceDashboard } from './bitsurance/dashboard';
 import { ConnectScreenWalletConnect } from './account/walletconnect/connect';
 import { DashboardWalletConnect } from './account/walletconnect/dashboard';
 import { AllAccounts } from '@/routes/accounts/all-accounts';
+import { Markets } from '@/routes/markets/markets';
 import { More } from '@/routes/settings/more';
 
 type TAppRouterProps = {
@@ -255,6 +256,7 @@ export const AppRouter = ({ devices, devicesKey, accounts, activeAccounts }: TAp
   const ReceiveAccountsSelectorEl = <InjectParams><ReceiveAccountsSelector activeAccounts={activeAccounts}/></InjectParams>;
 
   const AllAccountsEl = <InjectParams><AllAccounts accounts={activeAccounts} /></InjectParams>;
+  const MarketsEl = <Markets />;
 
   return (
     <Routes>
@@ -294,6 +296,7 @@ export const AppRouter = ({ devices, devicesKey, accounts, activeAccounts }: TAp
           <Route path="select/:code" element={MarketEl} />
           <Route path="btcdirect-otc" element={<BTCDirectOTC/>} />
         </Route>
+        <Route path="markets" element={MarketsEl} />
         <Route path="manage-backups/:deviceID" element={ManageBackupsEl} />
         <Route path="accounts/select-receive" element={ReceiveAccountsSelectorEl} />
         <Route path="accounts/all" element={AllAccountsEl} />

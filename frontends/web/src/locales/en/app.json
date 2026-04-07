@@ -1544,6 +1544,20 @@
     },
     "title": "Note"
   },
+  "markets": {
+    "news": {
+      "description": "Recent Bitcoin market coverage with live article titles and publication dates. The list refreshes automatically every 15 minutes.",
+      "fallbackNotice": "Live news is temporarily unavailable, so showing a cached fallback list instead.",
+      "heading": "News",
+      "loadFailed": "Could not load the latest Bitcoin news right now.",
+      "title": "Recent Bitcoin articles"
+    },
+    "price": {
+      "heading": "Chart",
+      "title": "Bitcoin chart"
+    },
+    "title": "Markets"
+  },
   "notification": {
     "newTxs_one": "New transaction in: {{accountName}}",
     "newTxs_other": "{{count}} new transactions in: {{accountName}}"
@@ -1905,6 +1919,7 @@
     "device": "Manage device",
     "insurance": "Insurance",
     "leave": "Leave",
+    "markets": "Markets",
     "settings": "Settings"
   },
   "success": {

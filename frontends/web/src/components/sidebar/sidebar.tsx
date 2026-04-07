@@ -10,7 +10,7 @@ import { deregisterTest } from '@/api/keystores';
 import { getVersion } from '@/api/bitbox02';
 import { debug } from '@/utils/env';
 import { AppLogoInverted, Logo } from '@/components/icon/logo';
-import { CloseXWhite, CogGray, Coins, Device, Eject, Linechart, RedDot, ShieldGray } from '@/components/icon';
+import { CloseXWhite, CogGray, Coins, Device, Eject, Linechart, MarketsIcon, RedDot, ShieldGray } from '@/components/icon';
 import { getAccountsByKeystore } from '@/routes/account/utils';
 import { SkipForTesting } from '@/routes/device/components/skipfortesting';
 import { AppContext } from '@/contexts/AppContext';
@@ -91,7 +91,7 @@ const Sidebar = ({
   };
 
   const accountsByKeystore = getAccountsByKeystore(accounts);
-  const userInSpecificAccountMarketPage = (pathname.startsWith('/market'));
+  const userInSpecificAccountMarketPage = (pathname === '/market' || pathname.startsWith('/market/'));
 
   return (
     <div className={style.sidebarContainer}>
@@ -122,6 +122,19 @@ const Sidebar = ({
                 <Linechart />
               </div>
               <span className={style.sidebarLabel}>{t('accountSummary.title')}</span>
+            </NavLink>
+          </div>
+        ) : null }
+        { accounts.length ? (
+          <div key="markets-top" className={style.sidebarItem}>
+            <NavLink
+              className={({ isActive }) => isActive ? style.sidebarActive : ''}
+              to="/markets"
+            >
+              <div className={style.single}>
+                <MarketsIcon className={style.marketsIcon} aria-hidden="true" />
+              </div>
+              <span className={style.sidebarLabel}>{t('markets.title')}</span>
             </NavLink>
           </div>
         ) : null }

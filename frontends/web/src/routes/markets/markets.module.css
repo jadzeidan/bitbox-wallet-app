@@ -1,0 +1,132 @@
+.container {
+    display: grid;
+    gap: var(--space-default);
+}
+
+.section {
+    background: var(--background-secondary);
+    border: 1px solid var(--color-secondary);
+    border-radius: var(--radius-xl);
+    padding: var(--space-default);
+}
+
+.chartHeader,
+.sectionHeader,
+.newsCardHeader {
+    align-items: flex-start;
+    display: flex;
+    gap: var(--space-half);
+    justify-content: space-between;
+}
+
+.eyebrow {
+    color: var(--color-gray-alt);
+    font-size: var(--size-smaller);
+    margin: 0 0 var(--space-quarter);
+    text-transform: uppercase;
+}
+
+.chartTitle,
+.sectionTitle {
+    margin: 0;
+}
+
+.sectionText,
+.newsCopy {
+    color: var(--color-gray-alt);
+    line-height: 1.5;
+}
+
+.sectionText {
+    margin: 0;
+}
+
+.chartContainer {
+    margin: 0;
+    overflow: hidden;
+}
+
+.chartWidget {
+    background:
+        radial-gradient(circle at top right, rgba(255, 184, 0, 0.18), transparent 35%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 65%),
+        var(--background-secondary);
+    border-radius: var(--radius-xl);
+    height: 310px;
+    overflow: hidden;
+    position: relative;
+    width: 100%;
+}
+
+.chartWidget :global(.tradingview-widget-container__widget),
+.chartWidget :global(iframe) {
+    height: 100% !important;
+    min-height: 0;
+    width: 100% !important;
+}
+
+.newsGrid {
+    display: grid;
+    gap: var(--space-half);
+    margin-top: var(--space-default);
+}
+
+.newsCard {
+    background: var(--background-primary);
+    border-radius: var(--radius-large);
+    padding: var(--space-half);
+}
+
+.newsMeta {
+    align-items: center;
+    color: var(--color-gray-alt);
+    display: flex;
+    font-size: var(--size-smaller);
+    gap: var(--space-quarter);
+    justify-content: space-between;
+}
+
+.newsSource {
+    color: var(--color-gray-alt);
+    font-size: var(--size-smaller);
+}
+
+.newsGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.newsState {
+    color: var(--color-gray-alt);
+}
+
+.newsCard {
+    cursor: pointer;
+    display: grid;
+    gap: var(--space-half);
+    text-decoration: none;
+}
+
+.newsTitle {
+    color: var(--color-text);
+    line-height: 1.4;
+}
+
+.newsCardHeader :global(img) {
+    height: 16px;
+    width: 16px;
+}
+
+.newsCopy {
+    margin: 0;
+}
+
+@media (max-width: 900px) {
+    .chartHeader,
+    .sectionHeader {
+        flex-direction: column;
+    }
+
+    .newsGrid {
+        grid-template-columns: 1fr;
+    }
+}

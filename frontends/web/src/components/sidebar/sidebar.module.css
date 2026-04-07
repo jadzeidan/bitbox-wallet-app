@@ -163,7 +163,8 @@ a.sidebarActive :global(.stacked) img:last-child,
     opacity: 1;
 }
 
-.sidebar img {
+.sidebar img,
+.sidebar svg {
     width: var(--sidebar-icon-size);
     height: auto;
     -webkit-transform-style: preserve-3d;
@@ -172,13 +173,21 @@ a.sidebarActive :global(.stacked) img:last-child,
     backface-visibility: hidden;
 }
 
-.single img {
+.single img,
+.single svg {
     opacity: .6;
     transition: opacity 0.2s ease;
 }
 
+.single .marketsIcon {
+    height: 17px;
+    width: 18px;
+}
+
 a.sidebarActive .single img,
-.sidebar a:hover .single img {
+a.sidebarActive .single svg,
+.sidebar a:hover .single img,
+.sidebar a:hover .single svg {
     opacity: 1;
 }
 

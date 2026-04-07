@@ -8,7 +8,7 @@ import { ContentWrapper } from '@/components/contentwrapper/contentwrapper';
 import { GlobalBanners } from '@/components/banners';
 import { ActionableItem } from '@/components/actionable-item/actionable-item';
 import { useOnlyVisitableOnMobile } from '@/hooks/onlyvisitableonmobile';
-import { ChevronRightDark, CogGray, RedDot, ShieldGray } from '@/components/icon';
+import { ChevronRightDark, CogGray, MarketsIcon, RedDot, ShieldGray } from '@/components/icon';
 import { TDevices } from '@/api/devices';
 import { useLoad } from '@/hooks/api';
 import { getVersion } from '@/api/bitbox02';
@@ -57,6 +57,14 @@ export const More = ({ devices }: Props) => {
                   <div className={styles.item}>
                     <CogGray width={22} height={22} alt={t('sidebar.settings')} />
                     {t('sidebar.settings')}
+                  </div>
+                </ActionableItem>
+                <ActionableItem
+                  onClick={() => navigate('/markets')}
+                >
+                  <div className={styles.item}>
+                    <MarketsIcon width={18} height={17} aria-hidden="true" />
+                    {t('markets.title')}
                   </div>
                 </ActionableItem>
                 <ActionableItem
