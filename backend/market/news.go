@@ -11,6 +11,7 @@ import (
 	"net/http"
 	neturl "net/url"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 )
@@ -18,10 +19,18 @@ import (
 const (
 	maxBitcoinNews    = 6
 	newsRequestTimout = 15 * time.Second
+	bitBoxBlogName    = "BitBox Blog"
 )
 
 var (
-	htmlTagPattern = regexp.MustCompile("<[^>]+>")
+	htmlTagPattern        = regexp.MustCompile("<[^>]+>")
+	fallbackBitBoxArticle = NewsArticle{
+		PublishedAt: "",
+		Summary:     "Product updates, security insights, and ecosystem news from the BitBox team.",
+		Title:       "Latest from the BitBox Blog",
+		URL:         "https://blog.bitbox.swiss/en/",
+		Source:      bitBoxBlogName,
+	}
 )
 
 type newsFeed struct {
@@ -30,6 +39,10 @@ type newsFeed struct {
 }
 
 var newsFeeds = []newsFeed{
+	{
+		name: bitBoxBlogName,
+		url:  "https://blog.bitbox.swiss/en/rss/",
+	},
 	{
 		name: "Bitcoin Magazine",
 		url:  "https://bitcoinmagazine.com/feed",
@@ -66,23 +79,80 @@ type rssItem struct {
 	Title       string `xml:"title"`
 }
 
-// BitcoinNews returns up to 6 recent bitcoin-related articles from CoinDesk's RSS feed.
+// BitcoinNews returns up to 6 recent bitcoin-related articles from configured RSS feeds.
 func BitcoinNews(httpClient *http.Client) ([]NewsArticle, error) {
+	allArticles := make([]NewsArticle, 0, maxBitcoinNews*len(newsFeeds))
 	var lastErr error
+	var latestBitBoxArticle *NewsArticle
+	bitBoxFeedConfigured := false
+
 	for _, feedSource := range newsFeeds {
-		articles, err := fetchBitcoinNewsFromFeed(httpClient, feedSource)
-		if err == nil && len(articles) > 0 {
-			return articles, nil
+		if feedSource.name == bitBoxBlogName {
+			bitBoxFeedConfigured = true
 		}
+		articles, err := fetchBitcoinNewsFromFeed(httpClient, feedSource)
 		if err != nil {
 			lastErr = err
+			if feedSource.name != bitBoxBlogName {
+				continue
+			}
+		}
+
+		if feedSource.name == bitBoxBlogName {
+			bitBoxArticles, bitBoxErr := fetchLatestNewsFromFeed(httpClient, feedSource)
+			if bitBoxErr == nil && len(bitBoxArticles) > 0 {
+				article := bitBoxArticles[0]
+				latestBitBoxArticle = &article
+			}
+		}
+
+		allArticles = append(allArticles, articles...)
+	}
+
+	if len(allArticles) == 0 {
+		if latestBitBoxArticle != nil {
+			return []NewsArticle{*latestBitBoxArticle}, nil
+		}
+		if bitBoxFeedConfigured && lastErr != nil {
+			return []NewsArticle{fallbackBitBoxArticle}, nil
+		}
+		if bitBoxFeedConfigured {
+			return []NewsArticle{fallbackBitBoxArticle}, nil
+		}
+		if lastErr != nil {
+			return nil, lastErr
+		}
+		return nil, fmt.Errorf("no bitcoin news available")
+	}
+
+	sortNewsArticles(allArticles)
+
+	uniqueArticles := make([]NewsArticle, 0, maxBitcoinNews)
+	seenURLs := map[string]struct{}{}
+	for _, article := range allArticles {
+		if _, seen := seenURLs[article.URL]; seen {
+			continue
+		}
+		seenURLs[article.URL] = struct{}{}
+		uniqueArticles = append(uniqueArticles, article)
+		if len(uniqueArticles) == maxBitcoinNews {
+			break
 		}
 	}
 
-	if lastErr != nil {
-		return nil, lastErr
+	if bitBoxFeedConfigured && !hasSource(uniqueArticles, bitBoxBlogName) {
+		bitBoxArticle := fallbackBitBoxArticle
+		if latestBitBoxArticle != nil {
+			bitBoxArticle = *latestBitBoxArticle
+		}
+		if len(uniqueArticles) == maxBitcoinNews {
+			uniqueArticles = uniqueArticles[:maxBitcoinNews-1]
+		}
+		uniqueArticles = append(uniqueArticles, bitBoxArticle)
+		sortNewsArticles(uniqueArticles)
 	}
-	return nil, fmt.Errorf("no bitcoin news available")
+
+	return uniqueArticles, nil
 }
 
 func isBitcoinNews(title string, summary string) bool {
@@ -119,6 +189,40 @@ func parsePubDate(value string) string {
 	return strings.TrimSpace(value)
 }
 
+func parseRFC3339(value string) (time.Time, bool) {
+	parsed, err := time.Parse(time.RFC3339, strings.TrimSpace(value))
+	if err != nil {
+		return time.Time{}, false
+	}
+	return parsed, true
+}
+
+func sortNewsArticles(articles []NewsArticle) {
+	sort.SliceStable(articles, func(i, j int) bool {
+		iTime, iOK := parseRFC3339(articles[i].PublishedAt)
+		jTime, jOK := parseRFC3339(articles[j].PublishedAt)
+
+		if iOK && jOK {
+			return iTime.After(jTime)
+		}
+		if iOK != jOK {
+			return iOK
+		}
+
+		// Fallback to deterministic ordering if a feed has an invalid date format.
+		return articles[i].PublishedAt > articles[j].PublishedAt
+	})
+}
+
+func hasSource(articles []NewsArticle, source string) bool {
+	for _, article := range articles {
+		if article.Source == source {
+			return true
+		}
+	}
+	return false
+}
+
 func normalizeNewsURL(rawURL string) string {
 	trimmedURL := strings.TrimSpace(rawURL)
 	parsedURL, err := neturl.Parse(trimmedURL)
@@ -132,6 +236,14 @@ func normalizeNewsURL(rawURL string) string {
 }
 
 func fetchBitcoinNewsFromFeed(httpClient *http.Client, feedSource newsFeed) ([]NewsArticle, error) {
+	return fetchNewsFromFeed(httpClient, feedSource, true, maxBitcoinNews)
+}
+
+func fetchLatestNewsFromFeed(httpClient *http.Client, feedSource newsFeed) ([]NewsArticle, error) {
+	return fetchNewsFromFeed(httpClient, feedSource, false, 1)
+}
+
+func fetchNewsFromFeed(httpClient *http.Client, feedSource newsFeed, onlyBitcoin bool, maxArticles int) ([]NewsArticle, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), newsRequestTimout)
 	defer cancel()
 
@@ -165,11 +277,11 @@ func fetchBitcoinNewsFromFeed(httpClient *http.Client, feedSource newsFeed) ([]N
 		return nil, err
 	}
 
-	articles := make([]NewsArticle, 0, maxBitcoinNews)
+	articles := make([]NewsArticle, 0, maxArticles)
 	for _, item := range feed.Channel.Items {
 		title := cleanText(item.Title)
 		summary := cleanText(item.Description)
-		if !isBitcoinNews(title, summary) {
+		if onlyBitcoin && !isBitcoinNews(title, summary) {
 			continue
 		}
 		if title == "" || item.Link == "" {
@@ -182,12 +294,15 @@ func fetchBitcoinNewsFromFeed(httpClient *http.Client, feedSource newsFeed) ([]N
 			URL:         normalizeNewsURL(item.Link),
 			Source:      feedSource.name,
 		})
-		if len(articles) == maxBitcoinNews {
+		if len(articles) == maxArticles {
 			break
 		}
 	}
 
 	if len(articles) == 0 {
+		if !onlyBitcoin {
+			return nil, fmt.Errorf("no market news available from %s", feedSource.name)
+		}
 		return nil, fmt.Errorf("no bitcoin news available from %s", feedSource.name)
 	}
 

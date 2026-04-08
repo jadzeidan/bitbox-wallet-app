@@ -15,6 +15,13 @@ import styles from './markets.module.css';
 
 const FALLBACK_NEWS_ARTICLES: TMarketNewsArticle[] = [
   {
+    publishedAt: '2026-04-01T00:00:00Z',
+    source: 'BitBox Blog',
+    summary: 'Product updates, security insights, and ecosystem news from the BitBox team.',
+    title: 'Latest from the BitBox Blog',
+    url: 'https://blog.bitbox.swiss/en/'
+  },
+  {
     publishedAt: '2026-04-06T00:00:00Z',
     source: 'Bitcoin Magazine',
     summary: 'Bitcoin moved back above $70,000 as geopolitical headlines, oil volatility, and ETF flows kept traders focused on macro risk.',
@@ -62,8 +69,12 @@ export const Markets = () => {
   const { t, i18n } = useTranslation();
   const { isDarkMode } = useDarkmode();
   const chartRef = useRef<HTMLDivElement>(null);
+  const tickerRef = useRef<HTMLDivElement>(null);
   const [marketNews, setMarketNews] = useState<TMarketNewsResponse>();
   const chartWidgetClassName = [styles.chartWidget, 'tradingview-widget-container']
+    .filter((className): className is string => Boolean(className))
+    .join(' ');
+  const tickerWidgetClassName = [styles.tickerWidget, 'tradingview-widget-container']
     .filter((className): className is string => Boolean(className))
     .join(' ');
 
@@ -105,6 +116,56 @@ export const Markets = () => {
 
     return () => {
       chartElement.innerHTML = '';
+    };
+  }, [isDarkMode]);
+
+  useEffect(() => {
+    const tickerElement = tickerRef.current;
+
+    if (!tickerElement) {
+      return;
+    }
+
+    const removeTradingViewBadge = () => {
+      tickerElement.querySelectorAll('.js-copyright-label').forEach((badge) => {
+        badge.remove();
+      });
+      tickerElement.querySelectorAll('[data-target-type="copyright"]').forEach((badgeLink) => {
+        const badge = badgeLink.closest('.js-copyright-label');
+        if (badge) {
+          badge.remove();
+        }
+      });
+    };
+
+    const previousScript = tickerElement.querySelector('script');
+    if (previousScript) {
+      previousScript.remove();
+    }
+
+    const observer = new MutationObserver(removeTradingViewBadge);
+    observer.observe(tickerElement, { childList: true, subtree: true });
+
+    const script = document.createElement('script');
+    script.type = 'text/javascript';
+    script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-single-quote.js';
+    script.async = true;
+    script.text = JSON.stringify({
+      colorTheme: isDarkMode ? 'dark' : 'light',
+      height: 106,
+      isTransparent: true,
+      largeChartUrl: '',
+      locale: 'en',
+      symbol: 'BITSTAMP:BTCUSD',
+      width: 430
+    });
+
+    tickerElement.appendChild(script);
+    window.setTimeout(removeTradingViewBadge, 0);
+
+    return () => {
+      observer.disconnect();
+      tickerElement.innerHTML = '';
     };
   }, [isDarkMode]);
 
@@ -158,16 +219,23 @@ export const Markets = () => {
           <View>
             <ViewContent>
               <div className={styles.container}>
-                <div className={styles.chartHeader}>
-                  <div>
-                    <p className={styles.eyebrow}>{t('markets.price.heading')}</p>
-                    <h3 className={styles.chartTitle}>{t('markets.price.title')}</h3>
+                <div className={styles.chartSection}>
+                  <div className={styles.chartHeader}>
+                    <div>
+                      <p className={styles.eyebrow}>{t('markets.price.heading')}</p>
+                      <h3 className={styles.chartTitle}>{t('markets.price.title')}</h3>
+                    </div>
+                    <div className={styles.tickerContainer}>
+                      <div className={tickerWidgetClassName} ref={tickerRef}>
+                        <div className="tradingview-widget-container__widget" />
+                      </div>
+                    </div>
                   </div>
-                </div>
 
-                <div className={styles.chartContainer}>
-                  <div className={chartWidgetClassName} ref={chartRef}>
-                    <div className="tradingview-widget-container__widget" />
+                  <div className={styles.chartContainer}>
+                    <div className={chartWidgetClassName} ref={chartRef}>
+                      <div className="tradingview-widget-container__widget" />
+                    </div>
                   </div>
                 </div>
 

@@ -102,6 +102,7 @@ var fixedURLWhitelist = []string{
 	"https://en.bitcoin.it/wiki/Bech32_adoption",
 	"https://github.com/bitcoin/bips/",
 	// Market news articles.
+	"https://blog.bitbox.swiss/",
 	"https://bitcoinmagazine.com/",
 	"https://www.bitcoinmagazine.com/",
 	"https://coindesk.com/",
