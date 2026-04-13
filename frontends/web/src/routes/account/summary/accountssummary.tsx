@@ -24,6 +24,7 @@ import { ContentWrapper } from '@/components/contentwrapper/contentwrapper';
 import { GlobalBanners } from '@/components/banners';
 import { BackupReminder } from '@/components/banners/backup';
 import { OfflineError } from '@/components/banners/offline-error';
+import { PortfolioTabs } from './portfolio-tabs';
 import style from './accountssummary.module.css';
 
 type TProps = {
@@ -184,6 +185,7 @@ export const AccountsSummary = ({
           <Header title={<h2>{t('accountSummary.title')}</h2>}>
             <HideAmountsButton />
           </Header>
+          <PortfolioTabs />
           <View>
             <Chart
               hideAmounts={hideAmounts}

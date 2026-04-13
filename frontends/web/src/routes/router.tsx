@@ -19,6 +19,7 @@ import { Addresses } from './account/addresses/addresses';
 import { SignMessage } from './account/sign-message/sign-message';
 import { SendWrapper } from './account/send/send-wrapper';
 import { AccountsSummary } from './account/summary/accountssummary';
+import { Markets } from './account/summary/markets';
 import { DeviceSwitch } from './device/deviceswitch';
 import { NoDeviceConnected } from './device/no-device-connected';
 import { ManageBackups } from './device/manage-backups/manage-backups';
@@ -263,6 +264,8 @@ export const AppRouter = ({ devices, devicesKey, accounts, activeAccounts }: TAp
 
   const AllAccountsEl = <InjectParams><AllAccounts accounts={activeAccounts} /></InjectParams>;
 
+  const MarketsEl = <Markets />;
+
   return (
     <Routes>
       <Route path="/">
@@ -282,7 +285,10 @@ export const AppRouter = ({ devices, devicesKey, accounts, activeAccounts }: TAp
           <Route path="wallet-connect/dashboard" element={AccDashboardWC} />
         </Route>
         <Route path="add-account" element={<AddAccount accounts={accounts}/>} />
-        <Route path="account-summary" element={AccountsSummaryEl} />
+        <Route path="account-summary">
+          <Route index element={AccountsSummaryEl} />
+          <Route path="markets" element={MarketsEl} />
+        </Route>
         <Route path="market">
           <Route path="info" element={MarketInfoEl} >
             <Route index element={MarketInfoEl} />

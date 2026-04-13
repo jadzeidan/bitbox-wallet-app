@@ -1,0 +1,105 @@
+.marketsContainer {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-large);
+    padding: var(--space-half);
+}
+
+.sectionTitle {
+    font-size: var(--size-subheader);
+    font-weight: 500;
+    margin-bottom: var(--space-half);
+    color: var(--color-default);
+}
+
+/* TradingView Chart */
+
+.chartContainer {
+    background-color: var(--background-secondary);
+    border-radius: var(--radius-xl);
+    overflow: hidden;
+}
+
+.chartContainer iframe {
+    display: block;
+    width: 100%;
+    height: 500px;
+    border: none;
+}
+
+/* Card Grid */
+
+.cardsGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: var(--space-half);
+}
+
+.cardLink {
+    text-decoration: none;
+    display: block;
+}
+
+.card {
+    background-color: var(--background-secondary);
+    border-radius: var(--radius-xl);
+    padding: var(--space-half) var(--space-half) var(--space-half);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-quarter);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    height: 100%;
+}
+
+.card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+}
+
+.blogCard {
+    border-left: 3px solid var(--color-blue);
+}
+
+.cardSource {
+    font-size: var(--size-xsmall);
+    color: var(--color-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+}
+
+.cardTitle {
+    font-size: var(--size-default);
+    font-weight: 500;
+    color: var(--color-default);
+    line-height: 1.35;
+}
+
+.cardDescription {
+    font-size: var(--size-small);
+    color: var(--color-secondary);
+    line-height: 1.5;
+}
+
+.readMore {
+    font-size: var(--size-small);
+    color: var(--color-blue);
+    font-weight: 500;
+    margin-top: auto;
+}
+
+/* Responsive */
+
+@media (max-width: 768px) {
+    .marketsContainer {
+        gap: var(--space-default);
+    }
+
+    .cardsGrid {
+        grid-template-columns: 1fr;
+    }
+
+    .chartContainer iframe {
+        height: 400px;
+    }
+}

@@ -48,9 +48,18 @@
   "accountSummary": {
     "availableBalance": "Available balance",
     "balance": "Balance",
+    "markets": {
+      "blog": "From the BitBox Blog",
+      "btcChart": "BTC / USD",
+      "news": "Bitcoin News"
+    },
     "name": "Account name",
     "noAccount": "There are no accounts to show.",
     "portfolio": "Portfolio",
+    "tabs": {
+      "markets": "Markets",
+      "portfolio": "Portfolio"
+    },
     "title": "My portfolio",
     "total": "Total",
     "totalAssets": "Total assets",
