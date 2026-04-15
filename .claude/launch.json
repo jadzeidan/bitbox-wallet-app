@@ -1,0 +1,18 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "backend",
+      "runtimeExecutable": "make",
+      "runtimeArgs": ["-C", "/Users/jad/Documents/GitHub/bitbox-wallet-app", "servewallet"],
+      "port": 8082
+    },
+    {
+      "name": "frontend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["start"],
+      "cwd": "/Users/jad/Documents/GitHub/bitbox-wallet-app/frontends/web",
+      "port": 8080
+    }
+  ]
+}

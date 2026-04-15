@@ -86,7 +86,7 @@ const NewsCard = ({ source, title, description, url }: TNewsArticle) => (
 
 const BlogCard = ({ title, description, url }: TBlogArticle) => (
   <A href={url} className={style.cardLink}>
-    <div className={`${style.card} ${style.blogCard}`}>
+    <div className={`${style.card ?? ''} ${style.blogCard ?? ''}`}>
       <span className={style.cardSource}>BitBox Blog</span>
       <span className={style.cardTitle}>{title}</span>
       <span className={style.cardDescription}>{description}</span>
