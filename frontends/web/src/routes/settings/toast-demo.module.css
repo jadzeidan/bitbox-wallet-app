@@ -1,0 +1,23 @@
+.description {
+  margin: 0 0 var(--space-default) 0;
+}
+
+.buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-half);
+}
+
+.buttons button {
+  min-width: 152px;
+}
+
+@media (max-width: 768px) {
+  .buttons {
+    flex-direction: column;
+  }
+
+  .buttons button {
+    width: 100%;
+  }
+}
