@@ -1909,6 +1909,21 @@
     "about": "About",
     "advancedSettings": "Advanced settings",
     "appearance": "Appearance",
+    "balanceStatement": {
+      "export": {
+        "description": "Export a PDF statement of your holdings at a selected snapshot date.",
+        "dialog": {
+          "accountsLabel": "Accounts to include",
+          "dateLabel": "Snapshot date",
+          "description": "Select the active accounts to include and choose the date for the balance snapshot.",
+          "generate": "Generate PDF",
+          "noAccounts": "No active accounts available.",
+          "title": "Export statement of balance"
+        },
+        "success": "Balance statement successfully exported.",
+        "title": "Export statement of balance"
+      }
+    },
     "electrum": {
       "add": "Add a server",
       "add-server": "Add",

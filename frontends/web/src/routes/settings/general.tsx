@@ -3,9 +3,11 @@
 import { useTranslation } from 'react-i18next';
 import { Main, Header, GuideWrapper, GuidedContent } from '@/components/layout';
 import { View, ViewContent } from '@/components/view/view';
+import type { TAccount } from '@/api/account';
 import { DarkmodeToggleSetting } from './components/appearance/darkmodeToggleSetting';
 import { NotesImport } from './components/appearance/notesImport';
 import { NotesExport } from './components/appearance/notesExport';
+import { ExportBalanceStatementSetting } from './components/appearance/export-balance-statement-setting';
 import { DefaultCurrencyDropdownSetting } from './components/appearance/defaultCurrencyDropdownSetting';
 import { LanguageDropdownSetting } from './components/appearance/languageDropdownSetting';
 import { ActiveCurrenciesDropdownSetting } from './components/appearance/activeCurrenciesDropdownSetting';
@@ -19,7 +21,11 @@ import { GlobalBanners } from '@/components/banners';
 import { ContentWrapper } from '@/components/contentwrapper/contentwrapper';
 import style from './general.module.css';
 
-export const General = ({ devices, hasAccounts }: TPagePropsWithSettingsTabs) => {
+type TProps = TPagePropsWithSettingsTabs & {
+  accounts: TAccount[];
+};
+
+export const General = ({ devices, hasAccounts, accounts }: TProps) => {
   const { t } = useTranslation();
   return (
     <GuideWrapper>
@@ -46,6 +52,7 @@ export const General = ({ devices, hasAccounts }: TPagePropsWithSettingsTabs) =>
                 <DefaultCurrencyDropdownSetting />
                 <ActiveCurrenciesDropdownSetting />
                 <DarkmodeToggleSetting />
+                <ExportBalanceStatementSetting accounts={accounts} />
                 { hasAccounts ? (
                   <>
                     <SubTitle className={`m-top-default ${style.subtitleWithMobilePadding || ''}`}>

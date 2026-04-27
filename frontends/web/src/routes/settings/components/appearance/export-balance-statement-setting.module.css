@@ -1,0 +1,21 @@
+.description {
+  margin-bottom: var(--space-default);
+}
+
+.accountsList {
+  border: 1px solid var(--color-secondary);
+  border-radius: var(--border-radius-default);
+  margin-bottom: var(--space-default);
+  max-height: 200px;
+  overflow-y: auto;
+  padding: var(--space-half);
+}
+
+.accountItem {
+  display: block;
+  margin-bottom: var(--space-quarter);
+}
+
+.dateInput {
+  margin-bottom: var(--space-default);
+}
