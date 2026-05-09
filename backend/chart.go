@@ -3,6 +3,7 @@
 package backend
 
 import (
+	"math"
 	"math/big"
 	"sort"
 	"time"
@@ -40,6 +41,21 @@ type RatChartEntry struct {
 	RatValue *big.Rat
 }
 
+// ChartPerformance contains portfolio performance metrics for a chart range.
+type ChartPerformance struct {
+	// MoneyWeightedReturn is the money-weighted return for the range, computed
+	// using the Modified Dietz method.
+	MoneyWeightedReturn *float64 `json:"moneyWeightedReturn"`
+}
+
+// ChartPerformanceByDisplay contains portfolio performance metrics for each chart filter.
+type ChartPerformanceByDisplay struct {
+	Week  ChartPerformance `json:"week"`
+	Month ChartPerformance `json:"month"`
+	Year  ChartPerformance `json:"year"`
+	All   ChartPerformance `json:"all"`
+}
+
 // Chart has all data needed to show a time-based chart of their assets to the user.
 type Chart struct {
 	// If true, we are missing historical exchange rates or block headers needed to compute the
@@ -51,6 +67,8 @@ type Chart struct {
 	DataHourly []ChartEntry `json:"chartDataHourly"`
 	// Fiat currency of the value in the chart and in the total.
 	Fiat string `json:"chartFiat"`
+	// Performance metrics for each chart range.
+	Performance ChartPerformanceByDisplay `json:"chartPerformance"`
 	// Current total value of all assets in the fiat currency. Nil if missing (this is independent
 	// of `DataMissing`).
 	Total *float64 `json:"chartTotal"`
@@ -95,6 +113,215 @@ func (backend *Backend) addChartData(
 	}
 }
 
+type chartCashFlow struct {
+	Time           time.Time
+	Value          float64
+	ValueAvailable bool
+}
+
+func utcRoundedHour(now time.Time) time.Time {
+	return now.UTC().Truncate(time.Hour)
+}
+
+func findPerformanceStartEntry(entries []ChartEntry, from time.Time) *ChartEntry {
+	if len(entries) == 0 {
+		return nil
+	}
+
+	startIndex := 0
+	if !from.IsZero() {
+		startIndex = sort.Search(len(entries), func(i int) bool {
+			return entries[i].Time >= from.Unix()
+		})
+	}
+
+	for i := startIndex; i < len(entries); i++ {
+		if entries[i].Value > 0 {
+			return &entries[i]
+		}
+	}
+
+	return nil
+}
+
+func calculateMoneyWeightedReturn(
+	beginningValue, endingValue float64,
+	startTime, endTime time.Time,
+	cashFlows []chartCashFlow,
+) *float64 {
+	if beginningValue <= 0 || !endTime.After(startTime) {
+		return nil
+	}
+
+	periodSeconds := endTime.Sub(startTime).Seconds()
+	if periodSeconds <= 0 {
+		return nil
+	}
+
+	var netCashFlow float64
+	var weightedCashFlow float64
+	for _, cashFlow := range cashFlows {
+		if !cashFlow.Time.After(startTime) || cashFlow.Time.After(endTime) {
+			continue
+		}
+		if !cashFlow.ValueAvailable {
+			return nil
+		}
+
+		netCashFlow += cashFlow.Value
+		remainingWeight := endTime.Sub(cashFlow.Time).Seconds() / periodSeconds
+		weightedCashFlow += cashFlow.Value * remainingWeight
+	}
+
+	denominator := beginningValue + weightedCashFlow
+	if denominator == 0 {
+		return nil
+	}
+
+	result := (endingValue - beginningValue - netCashFlow) / denominator
+	if math.IsNaN(result) || math.IsInf(result, 0) {
+		return nil
+	}
+
+	return &result
+}
+
+func (backend *Backend) historicalOrLatestPriceAt(asset coin.Coin, fiat string, at time.Time) (float64, bool) {
+	price := backend.RatesUpdater().HistoricalPriceAt(string(asset.Code()), fiat, at)
+	if price != 0 {
+		return price, true
+	}
+
+	latestRatesTime := backend.RatesUpdater().HistoryLatestTimestampCoin(string(asset.Code()))
+	if (latestRatesTime.IsZero() || latestRatesTime.Before(at)) && time.Since(at) < 2*time.Hour {
+		latestPrice, err := backend.RatesUpdater().LatestPriceForPair(asset.Unit(false), fiat)
+		if err == nil && latestPrice != 0 {
+			return latestPrice, true
+		}
+	}
+
+	return 0, false
+}
+
+func (backend *Backend) fiatValueAt(asset coin.Coin, amount coin.Amount, fiat string, at time.Time) (float64, bool) {
+	price, ok := backend.historicalOrLatestPriceAt(asset, fiat, at)
+	if !ok {
+		return 0, false
+	}
+
+	valueRat := new(big.Rat).Mul(
+		new(big.Rat).SetFrac(amount.BigInt(), coin.DecimalsExp(asset, false)),
+		new(big.Rat).SetFloat64(price),
+	)
+	value, _ := valueRat.Float64()
+	return value, true
+}
+
+func (backend *Backend) appendChartCashFlows(
+	account accounts.Interface,
+	fiat string,
+	txs accounts.OrderedTransactions,
+	flows []chartCashFlow,
+) []chartCashFlow {
+	for _, tx := range txs {
+		if tx.Timestamp == nil || tx.Height <= 0 || tx.Status == accounts.TxStatusFailed {
+			continue
+		}
+
+		var multiplier float64
+		switch tx.Type {
+		case accounts.TxTypeReceive:
+			multiplier = 1
+		case accounts.TxTypeSend:
+			multiplier = -1
+		default:
+			continue
+		}
+
+		value, ok := backend.fiatValueAt(account.Coin(), tx.Amount, fiat, *tx.Timestamp)
+		if !ok {
+			flows = append(flows, chartCashFlow{
+				Time:           *tx.Timestamp,
+				ValueAvailable: false,
+			})
+			continue
+		}
+
+		flows = append(flows, chartCashFlow{
+			Time:           *tx.Timestamp,
+			Value:          multiplier * value,
+			ValueAvailable: true,
+		})
+	}
+	return flows
+}
+
+func chartPerformanceForRange(
+	entries []ChartEntry,
+	cashFlows []chartCashFlow,
+	rangeStart, endTime time.Time,
+	endingValue float64,
+) ChartPerformance {
+	startEntry := findPerformanceStartEntry(entries, rangeStart)
+	if startEntry == nil {
+		return ChartPerformance{}
+	}
+
+	return ChartPerformance{
+		MoneyWeightedReturn: calculateMoneyWeightedReturn(
+			startEntry.Value,
+			endingValue,
+			time.Unix(startEntry.Time, 0),
+			endTime,
+			cashFlows,
+		),
+	}
+}
+
+func computeChartPerformance(
+	now time.Time,
+	chartDataDaily, chartDataHourly []ChartEntry,
+	cashFlows []chartCashFlow,
+	chartTotal *float64,
+) ChartPerformanceByDisplay {
+	if chartTotal == nil {
+		return ChartPerformanceByDisplay{}
+	}
+
+	roundedHour := utcRoundedHour(now)
+
+	return ChartPerformanceByDisplay{
+		Week: chartPerformanceForRange(
+			chartDataHourly,
+			cashFlows,
+			roundedHour.AddDate(0, 0, -7),
+			now,
+			*chartTotal,
+		),
+		Month: chartPerformanceForRange(
+			chartDataDaily,
+			cashFlows,
+			roundedHour.AddDate(0, -1, 0),
+			now,
+			*chartTotal,
+		),
+		Year: chartPerformanceForRange(
+			chartDataDaily,
+			cashFlows,
+			roundedHour.AddDate(-1, 0, 0),
+			now,
+			*chartTotal,
+		),
+		All: chartPerformanceForRange(
+			chartDataDaily,
+			cashFlows,
+			time.Time{},
+			now,
+			*chartTotal,
+		),
+	}
+}
+
 // ChartData assembles chart data for all active accounts.
 func (backend *Backend) ChartData() (*Chart, error) {
 	// If true, we are missing headers or historical conversion rates necessary to compute the chart
@@ -106,6 +333,7 @@ func (backend *Backend) ChartData() (*Chart, error) {
 	chartEntriesHourly := map[int64]RatChartEntry{}
 
 	fiat := backend.Config().AppConfig().Backend.MainFiat
+	now := time.Now()
 
 	// Chart data until this point in time.
 	until := backend.RatesUpdater().HistoryLatestTimestampFiat(backend.allCoinCodes(), fiat)
@@ -118,6 +346,7 @@ func (backend *Backend) ChartData() (*Chart, error) {
 
 	currentTotal := new(big.Rat)
 	currentTotalMissing := false
+	chartCashFlows := []chartCashFlow{}
 	// Total number of transactions across all active accounts.
 	totalNumberOfTransactions := 0
 	for _, account := range backend.Accounts() {
@@ -136,6 +365,7 @@ func (backend *Backend) ChartData() (*Chart, error) {
 			return nil, err
 		}
 		totalNumberOfTransactions += len(txs)
+		chartCashFlows = backend.appendChartCashFlows(account, fiat, txs, chartCashFlows)
 
 		coinDecimals := coin.DecimalsExp(account.Coin(), false)
 
@@ -157,7 +387,7 @@ func (backend *Backend) ChartData() (*Chart, error) {
 		}
 
 		// Time from which the chart turns from daily points to hourly points.
-		hourlyFrom := time.Now().AddDate(0, 0, -7).Truncate(24 * time.Hour)
+		hourlyFrom := now.AddDate(0, 0, -7).Truncate(24 * time.Hour)
 
 		earliestPriceAvailable := backend.RatesUpdater().HistoryEarliestTimestamp(
 			string(account.Coin().Code()),
@@ -242,7 +472,7 @@ func (backend *Backend) ChartData() (*Chart, error) {
 		if isUpToDate && !currentTotalMissing {
 			total, _ := currentTotal.Float64()
 			result = append(result, ChartEntry{
-				Time:           time.Now().Unix(),
+				Time:           now.Unix(),
 				Value:          total,
 				FormattedValue: coin.FormatAsCurrency(currentTotal, fiat),
 			})
@@ -280,11 +510,30 @@ func (backend *Backend) ChartData() (*Chart, error) {
 		chartTotal = &tot
 		formattedChartTotal = coin.FormatAsCurrency(currentTotal, fiat)
 	}
+
+	chartDataDaily := toSortedSlice(chartEntriesDaily, fiat)
+	chartDataHourly := toSortedSlice(chartEntriesHourly, fiat)
+	sort.Slice(chartCashFlows, func(i, j int) bool {
+		return chartCashFlows[i].Time.Before(chartCashFlows[j].Time)
+	})
+
+	chartPerformance := ChartPerformanceByDisplay{}
+	if !chartDataMissing {
+		chartPerformance = computeChartPerformance(
+			now,
+			chartDataDaily,
+			chartDataHourly,
+			chartCashFlows,
+			chartTotal,
+		)
+	}
+
 	return &Chart{
 		DataMissing:    chartDataMissing,
-		DataDaily:      toSortedSlice(chartEntriesDaily, fiat),
-		DataHourly:     toSortedSlice(chartEntriesHourly, fiat),
+		DataDaily:      chartDataDaily,
+		DataHourly:     chartDataHourly,
 		Fiat:           fiat,
+		Performance:    chartPerformance,
 		Total:          chartTotal,
 		FormattedTotal: formattedChartTotal,
 		IsUpToDate:     isUpToDate,

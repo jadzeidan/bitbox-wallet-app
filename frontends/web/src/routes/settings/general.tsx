@@ -9,6 +9,7 @@ import { NotesExport } from './components/appearance/notesExport';
 import { DefaultCurrencyDropdownSetting } from './components/appearance/defaultCurrencyDropdownSetting';
 import { LanguageDropdownSetting } from './components/appearance/languageDropdownSetting';
 import { ActiveCurrenciesDropdownSetting } from './components/appearance/activeCurrenciesDropdownSetting';
+import { PortfolioPercentageDropdownSetting } from './components/appearance/portfolioPercentageDropdownSetting';
 import { WithSettingsTabs } from './components/tabs';
 import { MobileHeader } from './components/mobile-header';
 import { Guide } from '@/components/guide/guide';
@@ -45,6 +46,7 @@ export const General = ({ devices, hasAccounts }: TPagePropsWithSettingsTabs) =>
                 <LanguageDropdownSetting />
                 <DefaultCurrencyDropdownSetting />
                 <ActiveCurrenciesDropdownSetting />
+                <PortfolioPercentageDropdownSetting />
                 <DarkmodeToggleSetting />
                 { hasAccounts ? (
                   <>

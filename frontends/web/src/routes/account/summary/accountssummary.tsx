@@ -224,6 +224,10 @@ export const AccountsSummary = ({
           text: t('guide.accountSummaryDescription.text'),
           title: t('guide.accountSummaryDescription.title'),
         }} />
+        <Entry key="accountSummaryPercentageMeaning" entry={{
+          text: t('guide.accountSummaryPercentageMeaning.text'),
+          title: t('guide.accountSummaryPercentageMeaning.title'),
+        }} />
         <Entry key="accountSummaryAmount" entry={{
           link: {
             text: 'www.coingecko.com',

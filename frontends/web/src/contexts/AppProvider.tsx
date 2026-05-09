@@ -9,7 +9,7 @@ import { getNativeLocale } from '@/api/nativelocale';
 import { getDevServers, getTesting } from '@/api/backend';
 import { getOnline, subscribeOnline } from '@/api/online';
 import { i18nextFormat } from '@/i18n/utils';
-import type { TChartDisplay, TSessionConfig } from './AppContext';
+import type { TChartDisplay, TPortfolioPercentageType, TSessionConfig } from './AppContext';
 import { useOrientation } from '@/hooks/orientation';
 import { useMediaQuery } from '@/hooks/mediaquery';
 import { useSync } from '@/hooks/api';
@@ -17,6 +17,16 @@ import { useSync } from '@/hooks/api';
 type TProps = {
   children: ReactNode;
 };
+
+type TFrontendConfig = {
+  guideShown?: boolean;
+  hideAmounts?: boolean;
+  portfolioPercentageType?: TPortfolioPercentageType;
+};
+
+const isPortfolioPercentageType = (
+  value: unknown,
+): value is TPortfolioPercentageType => value === 'moneyWeightedReturn' || value === 'value';
 
 export const AppProvider = ({ children }: TProps) => {
   const nativeLocale = i18nextFormat(useDefault(useLoad(getNativeLocale), 'de-CH'));
@@ -26,6 +36,7 @@ export const AppProvider = ({ children }: TProps) => {
   const [guideShown, setGuideShown] = useState(false);
   const [guideExists, setGuideExists] = useState(false);
   const [hideAmounts, setHideAmounts] = useState(false);
+  const [portfolioPercentageType, setPortfolioPercentageType] = useState<TPortfolioPercentageType>('value');
   const [activeSidebar, setActiveSidebar] = useState(false);
   const [chartDisplay, setChartDisplay] = useState<TChartDisplay>('year');
   const [firmwareUpdateDialogOpen, setFirmwareUpdateDialogOpen] = useState(false);
@@ -48,6 +59,11 @@ export const AppProvider = ({ children }: TProps) => {
     setActiveSidebar(prev => !prev);
   };
 
+  const updatePortfolioPercentageType = (type: TPortfolioPercentageType) => {
+    setConfig({ frontend: { portfolioPercentageType: type } });
+    setPortfolioPercentageType(type);
+  };
+
   const updateSessionConfig = (object: TSessionConfig) => {
     setTmpConfig(old => ({
       ...old,
@@ -63,12 +79,16 @@ export const AppProvider = ({ children }: TProps) => {
 
   useEffect(() => {
     getConfig().then(({ frontend }) => {
-      if (frontend) {
-        if (frontend.guideShown !== undefined) {
-          setGuideShown(frontend.guideShown);
+      const frontendConfig = frontend as TFrontendConfig | undefined;
+      if (frontendConfig) {
+        if (frontendConfig.guideShown !== undefined) {
+          setGuideShown(frontendConfig.guideShown);
         }
-        if (frontend.hideAmounts !== undefined) {
-          setHideAmounts(frontend.hideAmounts);
+        if (frontendConfig.hideAmounts !== undefined) {
+          setHideAmounts(frontendConfig.hideAmounts);
+        }
+        if (isPortfolioPercentageType(frontendConfig.portfolioPercentageType)) {
+          setPortfolioPercentageType(frontendConfig.portfolioPercentageType);
         }
       } else {
         setGuideShown(true);
@@ -84,6 +104,7 @@ export const AppProvider = ({ children }: TProps) => {
         guideShown,
         guideExists,
         hideAmounts,
+        portfolioPercentageType,
         isTesting,
         isDevServers,
         isOnline,
@@ -93,8 +114,10 @@ export const AppProvider = ({ children }: TProps) => {
         setGuideExists,
         setHideAmounts,
         setChartDisplay,
+        setPortfolioPercentageType,
         toggleHideAmounts,
         toggleSidebar,
+        updatePortfolioPercentageType,
         setFirmwareUpdateDialogOpen,
         firmwareUpdateDialogOpen,
         sessionConfig: tmpConfig,

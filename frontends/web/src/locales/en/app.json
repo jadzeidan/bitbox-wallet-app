@@ -767,6 +767,10 @@
     "dataMissing": "Loading chart, come back later...",
     "dataOldTimestamp": "Historical exchange rates updating. The chart is not displaying data after {{time}}.",
     "dataUpdating": "updating data…",
+    "displayMode": {
+      "performance": "Performance",
+      "totalValue": "Value over time"
+    },
     "filter": {
       "all": "All",
       "month": "Month",
@@ -1130,8 +1134,12 @@
       "title": "How is the total amount calculated?"
     },
     "accountSummaryDescription": {
-      "text": "Here you can see the performance of your portfolio over time. A summary of your individual crypto accounts is displayed under the chart.",
+      "text": "Here you can see the value and performance of your portfolio over time. A summary of your individual crypto accounts is displayed under the chart.",
       "title": "What does this page show me?"
+    },
+    "accountSummaryPercentageMeaning": {
+      "text": "The percentage on your portfolio chart shows one of two things for the selected time range:\n\n- Performance of your portfolio: This is the money-weighted return (MWR). It adjusts for money moving in or out of your portfolio, so it's meant to reflect how your portfolio performed.\n\n- Value of your portfolio: This is how the total value of your portfolio changed over time. It includes the effect of deposits and withdrawals.\n\nYou can switch between Performance and Value by tapping the percentage, or in Settings > Appearance. By default, the app shows Value.",
+      "title": "What does the percentage mean?"
     },
     "accountTransactionAttributesBTC": {
       "text": "Virtual size: Determines the network fee. You successfully saved on fees if it is smaller than the transaction size.\nSize: Actual transaction size in bytes when serialized according to the underlying blockchain.\nWeight: A new metric introduced with Segwit to evaluate transaction and block sizes. Each segregated witness byte counts as one, everything else as four weight units. Instead of one megabyte in actual size, the block size limit is now four million weight units.",
@@ -1612,6 +1620,14 @@
       "language": {
         "description": "Which language you want the BitBoxApp to use.",
         "title": "Language"
+      },
+      "portfolioPerformance": {
+        "description": "Choose how the portfolio percentage is calculated.",
+        "options": {
+          "moneyWeightedReturn": "Money-weighted return",
+          "value": "Value"
+        },
+        "title": "Portfolio percentage"
       },
       "remebmerWallet": {
         "enable": {
