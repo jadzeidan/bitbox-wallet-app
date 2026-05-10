@@ -278,7 +278,8 @@ func Serve(
 	simulator bool,
 	gapLimits *btctypes.GapLimits,
 	communication NativeCommunication,
-	backendEnvironment backend.Environment) {
+	backendEnvironment backend.Environment,
+	appDataDir string) {
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -300,9 +301,13 @@ func Serve(
 	}
 
 	var err error
+	if appDataDir == "" {
+		appDataDir = config.AppDir()
+	}
+
 	globalBackend, err = backend.NewBackend(
 		arguments.NewArguments(
-			config.AppDir(),
+			appDataDir,
 			testnet,
 			false,
 			false,

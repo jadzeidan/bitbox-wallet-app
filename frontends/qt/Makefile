@@ -70,7 +70,9 @@ osx:
 	cd build/osx/ && macdeployqt BitBox.app
 	cp server/libserver.so build/osx/BitBox.app/Contents/Frameworks
 	cp build/assets.rcc build/osx/BitBox.app/Contents/MacOS/
+	ln -sfn ../../../../../../../Frameworks build/osx/BitBox.app/Contents/Frameworks/QtWebEngineCore.framework/Versions/A/Helpers/QtWebEngineProcess.app/Contents/Frameworks
 	install_name_tool -change libserver.so @executable_path/../Frameworks/libserver.so build/osx/BitBox.app/Contents/MacOS/BitBox
+	codesign --force --deep --sign - build/osx/BitBox.app
 	cp -r resources/MacOS/Testnet.app build/osx/Testnet.app
 windows:
 	bash make_windows.sh

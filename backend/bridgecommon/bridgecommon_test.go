@@ -71,6 +71,7 @@ func TestServeShutdownServe(t *testing.T) {
 		nil,
 		communication{},
 		environment{},
+		"",
 	)
 	bridgecommon.Shutdown()
 
@@ -82,6 +83,7 @@ func TestServeShutdownServe(t *testing.T) {
 			nil,
 			communication{},
 			environment{},
+			"",
 		)
 		close(done)
 	}()

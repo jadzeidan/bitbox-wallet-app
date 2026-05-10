@@ -27,6 +27,11 @@ static void notifyUser(notifyUserCallback f, const char* msg) {
     f(msg);
 }
 
+typedef int (*authCallback) (const char*);
+static int authenticate(authCallback f, const char* reason) {
+    return f(reason);
+}
+
 typedef char* (*getSaveFilenameCallback) (const char*);
 static char* getSaveFilename(getSaveFilenameCallback f, const char* suggestedfilename) {
     return f(suggestedfilename);
@@ -59,6 +64,7 @@ import (
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/devices/bitbox02/simulator"
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/devices/usb"
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/mobileserver"
+	utilConfig "github.com/BitBoxSwiss/bitbox-wallet-app/util/config"
 	"github.com/BitBoxSwiss/bitbox-wallet-app/util/logging"
 	"github.com/BitBoxSwiss/bitbox-wallet-app/util/system"
 )
@@ -68,6 +74,8 @@ type nativeCommunication struct {
 	respond    func(queryID int, response string)
 	pushNotify func(msg string)
 }
+
+var globalAppDataProtection *appDataProtection
 
 // Respond implements bridge.NativeCommunication.
 func (communication *nativeCommunication) Respond(queryID int, response string) {
@@ -112,6 +120,7 @@ func serve(
 	pushNotificationsFn C.pushNotificationsCallback,
 	responseFn C.responseCallback,
 	notifyUserFn C.notifyUserCallback,
+	authFn C.authCallback,
 	preferredLocale *C.cchar_t,
 	getSaveFilenameFn C.getSaveFilenameCallback,
 ) {
@@ -152,6 +161,27 @@ func serve(
 	// Capture C string early to avoid potential use when it's already popped
 	// from the stack.
 	nativeLocale := C.GoString(preferredLocale)
+
+	nativeAuth := func(reason string) authOutcome {
+		cReason := C.CString(reason)
+		defer C.free(unsafe.Pointer(cReason))
+		switch int(C.authenticate(authFn, cReason)) {
+		case 0:
+			return authOutcomeOK
+		case 1:
+			return authOutcomeCancel
+		case 2:
+			return authOutcomeMissing
+		default:
+			return authOutcomeError
+		}
+	}
+
+	protection, err := setupAppDataProtection(utilConfig.AppDir(), nativeAuth, log)
+	if err != nil {
+		log.WithError(err).Fatal("could not initialize app data protection")
+	}
+	globalAppDataProtection = protection
 
 	bridgecommon.Serve(
 		*testnet,
@@ -194,11 +224,21 @@ func serve(
 			DetectDarkThemeFunc: detectDarkTheme,
 			AuthFunc: func() {
 				log.Info("Qt auth")
-				authResult(mobileserver.AuthResultOk)
+				switch nativeAuth("Authenticate to continue") {
+				case authOutcomeOK:
+					authResult(mobileserver.AuthResultOk)
+				case authOutcomeCancel:
+					authResult(mobileserver.AuthResultCancel)
+				case authOutcomeMissing:
+					authResult(mobileserver.AuthResultMissing)
+				default:
+					authResult(mobileserver.AuthResultErr)
+				}
 			},
-			OnAuthSettingChangedFunc: func(bool) {},
+			OnAuthSettingChangedFunc: protection.onAuthSettingChanged,
 			BluetoothConnectFunc:     func(string) {},
 		},
+		protection.dataDir,
 	)
 }
 
@@ -219,6 +259,10 @@ func goLog(msg *C.cchar_t) {
 //export backendShutdown
 func backendShutdown() {
 	bridgecommon.Shutdown()
+	if globalAppDataProtection != nil {
+		globalAppDataProtection.close()
+		globalAppDataProtection = nil
+	}
 }
 
 func authResult(result string) {

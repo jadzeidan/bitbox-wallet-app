@@ -45,6 +45,7 @@
 
 #include "filedialog.h"
 #include "libserver.h"
+#include "macos_auth.h"
 #include "webclass.h"
 #include "urlhandler.h"
 #include "network.h"
@@ -386,6 +387,15 @@ int main(int argc, char *argv[])
                                       Qt::QueuedConnection,
                                       Q_ARG(QString, APPNAME),
                                       Q_ARG(QString, msg));
+        },
+        // authCallback
+        [](const char* reason) {
+#if defined(Q_OS_MAC)
+            return macosAuthenticate(reason);
+#else
+            Q_UNUSED(reason);
+            return 2;
+#endif
         },
         // user preferred UI language
         preferredLocale.toStdString().c_str(),

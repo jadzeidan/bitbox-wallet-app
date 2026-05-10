@@ -68,9 +68,11 @@ HEADERS += libserver.h webclass.h filedialog.h urlhandler.h network.h
 unix:macx {
     CONFIG += sdk_no_version_check
     QMAKE_APPLE_DEVICE_ARCHS = x86_64 arm64
+    OBJECTIVE_SOURCES += macos_auth.mm
+    HEADERS += macos_auth.h
     # Those frameworks are needed for Go's http/net packages.
     # Waiting for https://github.com/golang/go/issues/11258 to be able to automatically capture link flags.
-    LIBS += -framework CoreFoundation -framework Security
+    LIBS += -framework CoreFoundation -framework LocalAuthentication -framework Security
     QMAKE_LFLAGS += "-pie -s -w"
     QMAKE_MACOSX_DEPLOYMENT_TARGET = $$[MACOS_MIN_VERSION]
 }

@@ -195,6 +195,7 @@ func Serve(dataDir string, testnet bool, environment GoEnvironmentInterface, goA
 			OnAuthSettingChangedFunc: environment.OnAuthSettingChanged,
 			BluetoothConnectFunc:     environment.BluetoothConnect,
 		},
+		config.AppDir(),
 	)
 }
 

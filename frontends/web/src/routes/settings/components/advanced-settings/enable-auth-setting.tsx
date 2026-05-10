@@ -7,7 +7,7 @@ import { SettingsItem } from '@/routes/settings/components/settingsItem/settings
 import { TBackendConfig, TConfig } from '@/routes/settings/advanced-settings';
 import { setConfig } from '@/utils/config';
 import { onAuthSettingChanged, TAuthEventObject, subscribeAuth, forceAuth } from '@/api/backend';
-import { runningInAndroid, runningInIOS } from '@/utils/env';
+import { runningInAndroid, runningInIOS, runningInQtWebEngine } from '@/utils/env';
 
 type TProps = {
   backendConfig?: TBackendConfig;
@@ -18,34 +18,44 @@ export const EnableAuthSetting = ({ backendConfig, onChangeConfig }: TProps) => 
   const { t } = useTranslation();
 
   const handleToggleAuth = async (e: ChangeEvent<HTMLInputElement>) => {
+    const targetEnabled = e.target.checked;
     // Before updating the config we need the user to authenticate.
     // The forceAuth is needed to force the backend to execute the
     // authentication even if the auth config is disabled.
-    const unsubscribe = subscribeAuth((data: TAuthEventObject) => {
-      if (data.typ === 'auth-result') {
-        if (data.result === 'authres-ok') {
-          updateConfig(!e.target.checked);
-          unsubscribe();
-        }
-        if (data.result === 'authres-cancel') {
-        // if the user canceled the auth, we leave everything as is.
-          unsubscribe();
-        }
-
+    let handled = false;
+    const unsubscribe = subscribeAuth(async (data: TAuthEventObject) => {
+      if (handled || data.typ !== 'auth-result') {
+        return;
+      }
+      switch (data.result) {
+      case 'authres-ok':
+        handled = true;
+        unsubscribe();
+        await updateConfig(targetEnabled);
+        break;
+      case 'authres-cancel':
+      case 'authres-err':
+      case 'authres-missing':
+        // If auth was not successful, leave everything as is.
+        handled = true;
+        unsubscribe();
+        break;
       }
     });
-    forceAuth();
+    await forceAuth();
   };
 
   const updateConfig = async (auth: boolean) => {
     const config = await setConfig({
       backend: { authentication: auth },
     }) as TConfig;
-    onAuthSettingChanged();
     onChangeConfig(config);
+    // Do not block the UI update if this hook runs slowly.
+    void onAuthSettingChanged();
   };
 
-  if (!runningInAndroid() && !runningInIOS()) {
+  const isQtMacOS = runningInQtWebEngine() && navigator.userAgent.toLowerCase().includes('mac');
+  if (!runningInAndroid() && !runningInIOS() && !isQtMacOS) {
     return null;
   }
 
