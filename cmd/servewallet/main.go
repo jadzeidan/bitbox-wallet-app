@@ -25,9 +25,9 @@ import (
 )
 
 const (
-	port    = 8082
-	address = "0.0.0.0"
-	darwin  = "darwin"
+	defaultPort = 8082
+	address     = "0.0.0.0"
+	darwin      = "darwin"
 )
 
 var backend *backendPkg.Backend
@@ -148,6 +148,7 @@ func main() {
 	simulatorPort := flag.Int("simulatorPort", 15423, "port for the BitBox02 simulator")
 	useSimulator := flag.Bool("simulator", false, "use the BitBox02 simulator")
 	aoppUrl := flag.String("aoppUrl", "", "AOPP URL for testing AOPP flow")
+	port := flag.Int("port", defaultPort, "port to listen on")
 
 	flag.Parse()
 
@@ -191,8 +192,8 @@ func main() {
 	}
 	backend = newBackend
 	handlers := backendHandlers.NewHandlers(backend, connectionData)
-	log.WithFields(logrus.Fields{"address": address, "port": port}).Info("Listening for HTTP")
-	fmt.Printf("Listening on: http://localhost:%d\n", port)
+	log.WithFields(logrus.Fields{"address": address, "port": *port}).Info("Listening for HTTP")
+	fmt.Printf("Listening on: http://localhost:%d\n", *port)
 
 	if *useSimulator {
 		// The simulator is only allowed when running in testnet mode.
@@ -206,7 +207,7 @@ func main() {
 		backend.HandleURI(*aoppUrl)
 	}
 
-	if err := http.ListenAndServe(fmt.Sprintf("%s:%d", address, port), handlers.Router); err != nil {
-		log.WithFields(logrus.Fields{"address": address, "port": port, "error": err.Error()}).Fatal("Failed to listen for HTTP")
+	if err := http.ListenAndServe(fmt.Sprintf("%s:%d", address, *port), handlers.Router); err != nil {
+		log.WithFields(logrus.Fields{"address": address, "port": *port, "error": err.Error()}).Fatal("Failed to listen for HTTP")
 	}
 }

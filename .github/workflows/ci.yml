@@ -41,6 +41,7 @@ jobs:
         run: ./scripts/github-ci.sh ci
         env:
           OS_NAME: linux
+          BBAPP_RS_NATIVE_ENDPOINTS: version,testing,dev-servers,online,using-mobile-data
 
   playwright:
     runs-on: ubuntu-latest

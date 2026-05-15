@@ -7,6 +7,7 @@ import { registerTest } from '@/api/keystores';
 import { Button } from '@/components/forms';
 import { PasswordSingleInput } from '@/components/password';
 import { Dialog, DialogButtons } from '@/components/dialog/dialog';
+import { debug } from '@/utils/env';
 
 type TProps = {
   children?: ReactNode;
@@ -27,7 +28,7 @@ export const SkipForTesting = ({
     setDialog(false);
   };
 
-  if (!isTesting) {
+  if (!isTesting && !debug) {
     return null;
   }
   return (

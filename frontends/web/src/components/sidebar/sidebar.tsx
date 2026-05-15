@@ -62,8 +62,6 @@ const Sidebar = ({
   const [ canUpgrade, setCanUpgrade ] = useState(false);
   const { activeSidebar, toggleSidebar } = useContext(AppContext);
 
-  const deviceIDs: string[] = Object.keys(devices);
-
   useEffect(() => {
     const checkUpgradableDevices = async () => {
       setCanUpgrade(false);
@@ -93,6 +91,7 @@ const Sidebar = ({
 
   const accountsByKeystore = getAccountsByKeystore(accounts);
   const userInSpecificAccountMarketPage = (pathname.startsWith('/market'));
+  const hasSoftwareKeystore = keystores?.some(({ type }) => type === 'software');
 
   return (
     <div className={style.sidebarContainer}>
@@ -199,7 +198,7 @@ const Sidebar = ({
           </NavLink>
         </div>
 
-        { !keystores || keystores.length === 0 ? (
+        { !hasSoftwareKeystore ? (
           <div key="unlock-software-keystore" className={style.sidebarItem}>
             <SkipForTesting className={style.closeSoftwareKeystore}>
               <div className={style.single}>
@@ -211,7 +210,7 @@ const Sidebar = ({
             </SkipForTesting>
           </div>
         ) : null }
-        {(debug && keystores?.some(({ type }) => type === 'software') && deviceIDs.length === 0) && (
+        {(debug && hasSoftwareKeystore) && (
           <div key="eject" className={style.sidebarItem}>
             <Button transparent onClick={eject} className={style.closeSoftwareKeystore}>
               <div className={style.single}>

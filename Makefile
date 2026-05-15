@@ -8,6 +8,7 @@ include version.mk.inc
 
 GO_LDFLAGS := $(GO_VERSION_LDFLAGS)
 GO_RUN := go run -mod=vendor -ldflags "$(GO_LDFLAGS)"
+BBAPP_RS_NATIVE_ENDPOINTS_DEFAULT := version,testing,dev-servers,online,using-mobile-data
 
 catch:
 	@echo "Choose a make target."
@@ -33,6 +34,45 @@ servewallet-mainnet-prodservers:
 	$(GO_RUN) ./cmd/servewallet -mainnet -devservers=false
 servewallet-simulator:
 	$(GO_RUN) ./cmd/servewallet -simulator=true
+servewallet-rs:
+	BBAPP_RS_NATIVE_ENDPOINTS="$${BBAPP_RS_NATIVE_ENDPOINTS:-$(BBAPP_RS_NATIVE_ENDPOINTS_DEFAULT)}" \
+	cargo run --manifest-path backend-rs/Cargo.toml -p bbapp_backend_rs_server --bin servewallet-rs
+servewallet-rs-smoke:
+	@set -euo pipefail; \
+	BBAPP_RS_NATIVE_ENDPOINTS="$${BBAPP_RS_NATIVE_ENDPOINTS:-$(BBAPP_RS_NATIVE_ENDPOINTS_DEFAULT)}"; \
+	export BBAPP_RS_NATIVE_ENDPOINTS; \
+	echo "Using BBAPP_RS_NATIVE_ENDPOINTS=$$BBAPP_RS_NATIVE_ENDPOINTS"; \
+	cargo run --manifest-path backend-rs/Cargo.toml -p bbapp_backend_rs_server --bin servewallet-rs > /tmp/servewallet-rs-smoke.log 2>&1 & \
+	pid=$$!; \
+	cleanup() { \
+		kill $$pid >/dev/null 2>&1 || true; \
+		wait $$pid >/dev/null 2>&1 || true; \
+	}; \
+	trap cleanup EXIT; \
+	ready=0; \
+	for _ in $$(seq 1 120); do \
+		if curl -sSf http://127.0.0.1:8082/healthz >/dev/null 2>&1; then \
+			ready=1; \
+			break; \
+		fi; \
+		sleep 1; \
+	done; \
+	if [ $$ready -ne 1 ]; then \
+		echo "servewallet-rs did not become ready"; \
+		tail -n 200 /tmp/servewallet-rs-smoke.log || true; \
+		exit 1; \
+	fi; \
+	test "$$(curl -sS http://127.0.0.1:8082/api/testing)" = "true"; \
+	test "$$(curl -sS http://127.0.0.1:8082/api/dev-servers)" = "true"; \
+	test "$$(curl -sS http://127.0.0.1:8082/api/online)" = "true"; \
+	test "$$(curl -sS http://127.0.0.1:8082/api/using-mobile-data)" = "false"; \
+	echo "servewallet-rs smoke passed"
+rust-test:
+	cargo test --manifest-path backend-rs/Cargo.toml --workspace
+rust-lint:
+	cargo clippy --manifest-path backend-rs/Cargo.toml --workspace --all-targets -- -D warnings
+rust-fmt-check:
+	cargo fmt --manifest-path backend-rs/Cargo.toml --all -- --check
 buildweb:
 	node --version
 	npm --version
