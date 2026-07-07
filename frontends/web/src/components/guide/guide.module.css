@@ -75,6 +75,16 @@
     margin: 0.4em 0;
 }
 
+.list {
+    margin: 0.4em 0;
+    padding-left: var(--space-default);
+}
+
+.list li {
+    font-size: var(--size-default);
+    margin: 0.4em 0;
+}
+
 .show {
     margin-right: 0;
 }

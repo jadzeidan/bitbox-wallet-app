@@ -2,7 +2,7 @@
 
 import '../../../__mocks__/i18n';
 import { describe, expect, it, vi } from 'vitest';
-import { render } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { Entry, TEntryProp } from './entry';
 vi.mock('@/i18n/i18n');
@@ -72,6 +72,35 @@ describe('components/guide/entry', () => {
       expect(container).toHaveTextContent('some url');
       expect(link).toBeInTheDocument();
       expect(link).toHaveAttribute('title', 'http://someurl.com');
+    });
+
+    it('opened & has bullet-only content', () => {
+      const EntryProps: TEntryProp = {
+        title: 'A title',
+        text: '- Value over time\n- Performance',
+      };
+      const { container } = render(<Entry key={'key'} entry={EntryProps} shown />);
+
+      expect(container.querySelectorAll('ul')).toHaveLength(1);
+      expect(container.querySelectorAll('li')).toHaveLength(2);
+      expect(screen.getByText('Value over time')).toBeInTheDocument();
+      expect(screen.getByText('Performance')).toBeInTheDocument();
+    });
+
+    it('opened & switches between paragraphs and lists', () => {
+      const EntryProps: TEntryProp = {
+        title: 'A title',
+        text: 'Intro paragraph\n\n- First item\n- Second item\n\nClosing paragraph',
+      };
+      const { container } = render(<Entry key={'key'} entry={EntryProps} shown />);
+
+      expect(container.querySelectorAll('p')).toHaveLength(2);
+      expect(container.querySelectorAll('ul')).toHaveLength(1);
+      expect(container.querySelectorAll('li')).toHaveLength(2);
+      expect(screen.getByText('Intro paragraph')).toBeInTheDocument();
+      expect(screen.getByText('First item')).toBeInTheDocument();
+      expect(screen.getByText('Second item')).toBeInTheDocument();
+      expect(screen.getByText('Closing paragraph')).toBeInTheDocument();
     });
   });
 });

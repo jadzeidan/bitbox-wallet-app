@@ -9,6 +9,7 @@ import { NotesExport } from './components/appearance/notesExport';
 import { DefaultCurrencyDropdownSetting } from './components/appearance/defaultCurrencyDropdownSetting';
 import { LanguageDropdownSetting } from './components/appearance/languageDropdownSetting';
 import { ActiveCurrenciesDropdownSetting } from './components/appearance/activeCurrenciesDropdownSetting';
+import { PortfolioPercentageDropdownSetting } from './components/appearance/portfolioPercentageDropdownSetting';
 import { WithSettingsTabs } from './components/tabs';
 import { MobileHeader } from './components/mobile-header';
 import { Guide } from '@/components/guide/guide';
@@ -68,6 +69,7 @@ export const GeneralSettingsContent = ({
         { id: 'language', content: <LanguageDropdownSetting /> },
         { id: 'default-currency', content: <DefaultCurrencyDropdownSetting /> },
         { id: 'active-currencies', content: <ActiveCurrenciesDropdownSetting /> },
+        { id: 'portfolio-percentage', content: <PortfolioPercentageDropdownSetting /> },
         { id: 'dark-mode', content: <DarkmodeToggleSetting /> },
       ],
       title: <SubTitle>{t('settings.appearance')}</SubTitle>,
@@ -103,6 +105,10 @@ const GeneralGuide = () => {
         },
         text: t('guide.accountRates.text'),
         title: t('guide.accountRates.title')
+      }} />
+      <Entry key="guide.appearancePortfolioPercentageOptions" entry={{
+        text: t('guide.appearancePortfolioPercentageOptions.text'),
+        title: t('guide.appearancePortfolioPercentageOptions.title'),
       }} />
 
     </Guide>

@@ -7,6 +7,7 @@
 - Support macOS "Number Format" system setting
 - Move insurance to Marketplace
 - Add clear cache button to settings
+- Add option for percentage on portfolio to reflect performance
 
 ## v4.51.1
 - iOS: fix App Store submission by packaging Inter as TTF fonts
