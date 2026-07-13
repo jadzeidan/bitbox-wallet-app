@@ -21,47 +21,6 @@ type TEntryProps = {
 
 type TProps = TEntryProps;
 
-const renderText = (text: string) => {
-  const content: ReactNode[] = [];
-  let listItems: string[] = [];
-
-  const flushList = () => {
-    if (!listItems.length) {
-      return;
-    }
-
-    content.push(
-      <ul className={style.list} key={`list-${content.length}`}>
-        {listItems.map((item, index) => (
-          <li key={index}>{item}</li>
-        ))}
-      </ul>
-    );
-    listItems = [];
-  };
-
-  text.trim().split('\n').forEach(line => {
-    const trimmedLine = line.trim();
-
-    if (!trimmedLine) {
-      flushList();
-      return;
-    }
-
-    if (trimmedLine.startsWith('- ')) {
-      listItems.push(trimmedLine.slice(2));
-      return;
-    }
-
-    flushList();
-    content.push(<p key={`paragraph-${content.length}`}>{trimmedLine}</p>);
-  });
-
-  flushList();
-
-  return content;
-};
-
 export const Entry = (props: TProps) => {
   const [shown, setShown] = useState<boolean>(props.shown || false);
 
@@ -83,7 +42,8 @@ export const Entry = (props: TProps) => {
       <div className={[style.entryContent, shown ? style.expanded : ''].join(' ')}>
         {shown ? (
           <div className="flex-1">
-            {renderText(entry.text)}
+            {entry.text.trim().split('\n').map((p, idx) => <p key={idx}>{p}</p>)}
+            {props.children}
             {entry.link && (
               <p>
                 {entry.link.url ? (
@@ -100,7 +60,6 @@ export const Entry = (props: TProps) => {
                 )}
               </p>
             )}
-            {props.children}
           </div>
         ) : null}
       </div>

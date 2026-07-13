@@ -25,7 +25,6 @@ type AppContextProps = {
   setGuideExists: Dispatch<SetStateAction<boolean>>;
   setHideAmounts: Dispatch<SetStateAction<boolean>>;
   setChartDisplay: Dispatch<SetStateAction<TChartDisplay>>;
-  setPortfolioPercentageType: Dispatch<SetStateAction<TPortfolioPercentageType>>;
   setFirmwareUpdateDialogOpen: Dispatch<SetStateAction<boolean>>;
   toggleGuide: () => void;
   toggleHideAmounts: () => void;
