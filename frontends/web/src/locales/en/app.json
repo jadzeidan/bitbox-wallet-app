@@ -1140,7 +1140,12 @@
       "title": "What does this page show me?"
     },
     "accountSummaryPercentageMeaning": {
-      "text": "The percentage on your portfolio chart shows one of two options for the selected time range:\n\n- Value over time: This is the change of your portfolio value over time, including deposits and withdrawals.\n- Performance: This is the money-weighted return (MWR). It takes into account deposits and withdrawals, so it reflects the performance of your portfolio.\n\nYou can switch between performance and value over time by clicking on the percentage, or in Settings under Appearance. By default, the app shows value over time.",
+      "listOptions": [
+        "Value over time: This is the change of your portfolio value over time, including deposits and withdrawals.",
+        "Performance: This is the money-weighted return (MWR). It takes into account deposits and withdrawals, so it reflects the performance of your portfolio."
+      ],
+      "outro": "You can switch between performance and value over time by clicking on the percentage, or in Settings under Appearance. By default, the app shows value over time.",
+      "text": "The percentage on your portfolio chart shows one of two options for the selected time range:",
       "title": "What does the percentage mean?"
     },
     "accountTransactionAttributesBTC": {

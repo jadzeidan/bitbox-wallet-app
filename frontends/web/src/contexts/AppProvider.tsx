@@ -106,7 +106,6 @@ export const AppProvider = ({ children }: TProps) => {
         setGuideExists,
         setHideAmounts,
         setChartDisplay,
-        setPortfolioPercentageType,
         toggleHideAmounts,
         toggleSidebar,
         updatePortfolioPercentageType,
