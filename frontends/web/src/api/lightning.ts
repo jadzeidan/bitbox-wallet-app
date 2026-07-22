@@ -6,7 +6,7 @@ import type { TSubscriptionCallback, TUnsubscribe } from '@/api/subscribe';
 import { subscribeEndpoint } from '@/api/subscribe';
 import { apiGet, apiPost } from '@/utils/request';
 import { TLightningErrorCode, TSdkError } from './lightning-errors';
-import { requireEngine } from './wavelength/engine';
+import { awaitEngine } from './wavelength/engine';
 import { toSdkError } from './wavelength/errors';
 import { getLnurlPayParams, parseLnurlPayInput, requestLnurlInvoice } from './wavelength/lnurl';
 
@@ -248,7 +248,7 @@ const isQuoteUsable = (cached: TCachedQuote | undefined): cached is TCachedQuote
 
 const prepareSendQuote = async (invoice: string, amountSat?: number): Promise<PrepareSendResult> => {
   try {
-    return await requireEngine().prepareSend(
+    return await (await awaitEngine()).prepareSend(
       amountSat === undefined ? { invoice } : { invoice, amountSat },
     );
   } catch (error) {
@@ -327,7 +327,7 @@ export const getParsePaymentInput = async ({ s }: TParsePaymentInputRequest): Pr
 
 export const getBoardingAddress = async (): Promise<string> => {
   try {
-    const result = await requireEngine().deposit();
+    const result = await (await awaitEngine()).deposit();
     return result.address;
   } catch (error) {
     throw toSdkError(error, 'Error calling getBoardingAddress');
@@ -389,7 +389,7 @@ export const postSendPayment = async (data: TSendPaymentRequest): Promise<void> 
   }
   let balance: Balance;
   try {
-    balance = await requireEngine().client.balance();
+    balance = await (await awaitEngine()).client.balance();
   } catch (error) {
     throw toSdkError(error, 'Error calling postSendPayment');
   }
@@ -397,7 +397,7 @@ export const postSendPayment = async (data: TSendPaymentRequest): Promise<void> 
     throw new TSdkError('Insufficient funds to send this payment', TLightningErrorCode.INSUFFICIENT_FUNDS);
   }
   try {
-    await requireEngine().sendPrepared(quote);
+    await (await awaitEngine()).sendPrepared(quote);
   } catch (error) {
     throw toSdkError(error, 'Error calling postSendPayment');
   } finally {
@@ -408,7 +408,7 @@ export const postSendPayment = async (data: TSendPaymentRequest): Promise<void> 
 
 export const getReceivePayment = async ({ amountSat, description }: TReceivePaymentRequest): Promise<TReceivePaymentResponse> => {
   try {
-    const result = await requireEngine().receive({
+    const result = await (await awaitEngine()).receive({
       amountSat,
       memo: description || undefined,
     });

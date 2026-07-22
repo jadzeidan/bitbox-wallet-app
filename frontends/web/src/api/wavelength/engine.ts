@@ -248,6 +248,10 @@ const boot = async (): Promise<void> => {
   }
   if (refreshTimer === null) {
     refreshTimer = setInterval(() => {
+      const phase = engine?.getSnapshot().phase;
+      if (phase !== 'ready' && phase !== 'restoring' && phase !== 'syncing') {
+        return;
+      }
       engine?.refresh().catch(error => {
         console.error('lightning: refreshing the wallet state failed', error);
       });
@@ -303,6 +307,52 @@ export const requireEngine = (): WalletEngine => {
     throw new TSdkError('The lightning wallet is not running');
   }
   return engine;
+};
+
+// Waits (bounded) until the wallet reports a usable phase. When the wait times
+// out, the call proceeds anyway so the daemon's own error surfaces instead of
+// a generic one.
+const usableWalletTimeoutMs = 60000;
+const waitForUsableWallet = (runningEngine: WalletEngine): Promise<void> => {
+  const isUsable = (): boolean => {
+    const phase = runningEngine.getSnapshot().phase;
+    return phase === 'ready' || phase === 'restoring' || phase === 'error';
+  };
+  if (isUsable()) {
+    return Promise.resolve();
+  }
+  return new Promise<void>(resolve => {
+    const finish = (): void => {
+      clearTimeout(timeout);
+      unsubscribe();
+      resolve();
+    };
+    const timeout = setTimeout(finish, usableWalletTimeoutMs);
+    const unsubscribe = runningEngine.subscribe(() => {
+      if (isUsable()) {
+        finish();
+      }
+    });
+  });
+};
+
+/**
+ * Returns the wallet engine for performing wallet actions, waiting for an
+ * in-flight boot and for the wallet to become usable. When the engine is down
+ * (e.g. a previous boot failed), a new boot is attempted, so user actions
+ * retry instead of failing outright. Throws when the wallet cannot be booted
+ * (e.g. no lightning account).
+ */
+export const awaitEngine = async (): Promise<WalletEngine> => {
+  if (!engine || bootPromise) {
+    await bootLightning().catch(() => {
+      // requireEngine below reports the failure; boot errors are logged by
+      // the boot itself.
+    });
+  }
+  const runningEngine = requireEngine();
+  await waitForUsableWallet(runningEngine);
+  return runningEngine;
 };
 
 // Dev-only console helpers for manual testing in webdev, e.g.
