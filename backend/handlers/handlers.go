@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"net"
 	"net/http"
 	"os"
 	"runtime/debug"
@@ -1347,9 +1348,23 @@ func isAPITokenValid(w http.ResponseWriter, r *http.Request, apiData *Connection
 		WithField("path", r.URL.Path).
 		WithField("method", r.Method)
 	methodLogEntry.Debug("endpoint")
-	// In dev mode, we allow unauthorized requests
+	// In dev mode, we allow unauthorized requests, but only when addressed to localhost.
+	// This guards against DNS rebinding: a malicious website could point its own domain at
+	// 127.0.0.1 and, being same-origin then, read the tokenless dev API — including the
+	// lightning wallet credentials.
 	if apiData.devMode {
-		return true
+		host := r.Host
+		if hostOnly, _, err := net.SplitHostPort(host); err == nil {
+			host = hostOnly
+		}
+		switch host {
+		case "localhost", "127.0.0.1", "::1", "[::1]":
+			return true
+		}
+		methodLogEntry.WithField("host", r.Host).
+			Error("Rejecting API request with non-local Host header")
+		http.Error(w, "forbidden host "+r.Host, http.StatusForbidden)
+		return false
 	}
 
 	if len(r.Header.Get("Authorization")) == 0 {

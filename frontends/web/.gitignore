@@ -2,6 +2,8 @@
 /build/
 /coverage/
 /node_modules/
+# wavelength wasm runtime assets, downloaded by scripts/fetch-wavelength-runtime.sh
+/public/wavewalletdk/
 **/*/output.log
 /yarn-error.log
 /npm-debug.log

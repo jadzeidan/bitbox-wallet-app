@@ -24,11 +24,10 @@ linux:
 	$(MAKE) base
 	qmake -o build/Makefile
 	cd build && $(MAKE)
-	mkdir -p build/linux-tmp/lib build/linux
+	mkdir build/linux-tmp build/linux
 	mv build/BitBox build/linux-tmp
 	cp build/assets.rcc build/linux-tmp/
-	cp server/libserver.so build/linux-tmp/lib
-	cp ../../vendor/github.com/breez/breez-sdk-spark-go/breez_sdk_spark/lib/linux-amd64/libbreez_sdk_spark_bindings.so build/linux-tmp/lib
+	cp server/libserver.so build/linux-tmp
 	cd build/linux-tmp && \
 		/opt/linuxdeployqt-continuous-x86_64.AppImage --appimage-extract && \
 		./squashfs-root/AppRun BitBox \
@@ -69,16 +68,8 @@ osx:
 	mkdir -p build/osx/BitBox.app/Contents/Resources
 	cp resources/MacOS/icon.icns build/osx/BitBox.app/Contents/Resources/
 	cp resources/MacOS/Assets.car build/osx/BitBox.app/Contents/Resources/
-	# Create a universal binary for libbreez_sdk_spark_bindings.dylib
-	mkdir -p build/osx/BitBox.app/Contents/Frameworks
-	lipo -create \
-		../../vendor/github.com/breez/breez-sdk-spark-go/breez_sdk_spark/lib/darwin-amd64/libbreez_sdk_spark_bindings.dylib \
-		../../vendor/github.com/breez/breez-sdk-spark-go/breez_sdk_spark/lib/darwin-aarch64/libbreez_sdk_spark_bindings.dylib \
-		-output build/osx/BitBox.app/Contents/Frameworks/libbreez_sdk_spark_bindings.dylib
 	cd build/osx/ && macdeployqt BitBox.app
 	cp server/libserver.so build/osx/BitBox.app/Contents/Frameworks
-	# The `-executable` flag is needed to have libserver.so resolve libbreez_sdk_spark_bindings.
-	cd build/osx/ && macdeployqt BitBox.app -executable=BitBox.app/Contents/Frameworks/libserver.so
 	cp build/assets.rcc build/osx/BitBox.app/Contents/MacOS/
 	install_name_tool -change libserver.so @executable_path/../Frameworks/libserver.so build/osx/BitBox.app/Contents/MacOS/BitBox
 	cp -r resources/MacOS/Testnet.app build/osx/Testnet.app

@@ -164,6 +164,10 @@ public:
             hardcodedMimeType = "font/ttf";
         } else if (path.endsWith(".otf")) {
             hardcodedMimeType = "font/otf";
+        } else if (path.endsWith(".wasm")) {
+            hardcodedMimeType = "application/wasm";
+        } else if (path.endsWith(".gz")) {
+            hardcodedMimeType = "application/gzip";
         } else {
             // Fallback to detected mimetype.
             hardcodedMimeType = mimeType.name();

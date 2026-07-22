@@ -1368,7 +1368,7 @@
         "title": "Where are my lightning private keys stored?"
       },
       "providers": {
-        "text": "Yes, the lightning wallet uses Spark through the Breez SDK. The BitBoxApp controls your lightning keys, while Spark provides the external infrastructure needed to send and receive lightning payments. Fees may apply when using the service.",
+        "text": "Yes, the lightning wallet uses Wavelength by Lightning Labs, an implementation of the Ark protocol. The BitBoxApp controls your lightning keys, while the Wavelength operator provides the external infrastructure needed to send and receive lightning payments. Fees may apply when using the service.",
         "title": "Are there external parties involved in this solution?"
       },
       "receive": {
@@ -1376,17 +1376,9 @@
           "text": "No, the recipient does not pay a fee for receiving a Lightning payment. The sender pays the fees.",
           "title": "Do I pay a fee when receiving?"
         },
-        "invoiceOrAddress": {
-          "text": "Create an invoice when you want to request a specific amount. An invoice is for one payment and expires after 30 days. Share your Lightning address instead when the sender should choose the amount, or when you want them to save it for future payments. You can add an optional description to an invoice to help identify the payment later.",
-          "title": "When should I create an invoice instead of sharing my address?"
-        },
         "payment": {
-          "text": "You can share your reusable Lightning address or create a BOLT11 invoice for a single payment. Share the QR code or the displayed text with the sender. The BitBoxApp does not need to remain open while you wait for the payment.",
+          "text": "Create a BOLT11 invoice for the amount you want to receive and share the QR code or the displayed text with the sender. You can add an optional description to help identify the payment later. The BitBoxApp does not need to remain open while you wait for the payment.",
           "title": "How can I receive a Lightning payment?"
-        },
-        "reuseAddress": {
-          "text": "Yes. Unlike an invoice, your Lightning address can be used for multiple payments. The sender chooses the amount, and their wallet requests the payment details automatically. It is not an email address, even though it looks like one.",
-          "title": "Can I reuse my Lightning address?"
         }
       },
       "securedByBitBox": {
@@ -1673,22 +1665,6 @@
       }
     },
     "initializing": "Lightning account initializing...",
-    "lnurlAddress": {
-      "availability": {
-        "available": "This name is available",
-        "checking": "Checking availability...",
-        "taken": "This name is taken"
-      },
-      "choose": "You can choose your own address below or generate one.",
-      "description": "An LNURL address is a human readable address which you can easily share to receive lightning payments",
-      "generate": "Generate address",
-      "label": "LNURL username",
-      "notice": "Please note, your address can only be changed <strong>once every 24 hours.</strong>",
-      "success": {
-        "message": "Your LNURL address has been set."
-      },
-      "title": "Set LNURL address"
-    },
     "payments": {
       "header": {
         "amount": "Amount",
@@ -1700,10 +1676,6 @@
       "title": "Payment history"
     },
     "receive": {
-      "address": {
-        "label": "Lightning address",
-        "scanQRCode": "Scan QR code to receive"
-      },
       "amountSats": {
         "label": "Sats",
         "placeholder": "Enter amount"
@@ -1752,25 +1724,21 @@
       },
       "title": "Send Lightning"
     },
+    "serviceStatus": {
+      "major": "The lightning service is currently unreachable. Lightning payments may be unavailable.",
+      "unknown": "The lightning service status is unknown. Lightning payments may be unavailable."
+    },
     "settings": {
       "closeAndWithdrawFunds": "Close and withdraw funds",
       "enableWallet": "Enable lightning wallet",
       "enableWalletDescription": "Lightning enables instant and low fee payments.",
       "expert": "Expert",
       "information": "Information",
-      "manuallyClaimTopUp": "Manually claim top-up",
       "serviceProvider": "Service provider",
-      "setLightningAddress": "Set lightning address",
       "shutDownWallet": "Shut down lightning wallet",
       "status": "Status",
       "statusConnected": "Connected",
       "title": "Lightning settings"
-    },
-    "sparkStatus": {
-      "degraded": "The Spark network is experiencing degraded performance. Lightning payments may be delayed.",
-      "major": "The Spark network is experiencing a major outage. Lightning payments may be unavailable.",
-      "partial": "The Spark network is partially unavailable. Lightning payments may be unavailable.",
-      "unknown": "The Spark network status is unknown. Lightning payments may be unavailable."
     },
     "topUp": {
       "action": "Top up",

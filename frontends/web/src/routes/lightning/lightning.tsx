@@ -10,8 +10,8 @@ import {
   getLightningBalance,
   getListPayments,
   subscribeListPayments,
-  getSparkStatus,
-  TSparkStatus,
+  getServiceStatus,
+  TServiceStatus,
 } from '../../api/lightning';
 import { Balance } from '../../components/balance/balance';
 import { ContentWrapper } from '@/components/contentwrapper/contentwrapper';
@@ -39,7 +39,9 @@ import { useMediaQuery } from '@/hooks/mediaquery';
 import { useScrollIntoView } from '@/hooks/scroll-into-view';
 import accountStyle from '@/routes/account/account.module.css';
 
-const sparkStatusPollInterval = 60 * 1000;
+// The service status is a cheap read of backend-cached state; poll often so
+// the banner tracks connection changes (e.g. right after the engine boots).
+const serviceStatusPollInterval = 10 * 1000;
 
 const bitcoinDepositTransactionStatus = (
   bitcoinDeposit: NonNullable<TLightningPayment['bitcoinDeposit']>,
@@ -116,15 +118,20 @@ const paymentToTransaction = (
   bitcoinDepositStateText: (state: NonNullable<TLightningPayment['bitcoinDeposit']>['state']) => string,
   bitcoinDepositStateShortText: (state: NonNullable<TLightningPayment['bitcoinDeposit']>['state']) => string,
 ): TTransactionListItem => {
-  const status = payment.bitcoinDeposit
+  // A failed payment status wins over the deposit progress state, so a failed
+  // or expired deposit is not rendered as eternally confirming.
+  const status = payment.status !== 'failed' && payment.bitcoinDeposit
     ? bitcoinDepositTransactionStatus(payment.bitcoinDeposit)
     : payment.status;
   const isComplete = status === 'complete';
-  const statusProgress = payment.bitcoinDeposit?.state === 'confirming'
-    ? 33
-    : payment.bitcoinDeposit?.state === 'claiming'
-      ? 66
-      : undefined;
+  const isFailed = status === 'failed';
+  const statusProgress = isFailed
+    ? undefined
+    : payment.bitcoinDeposit?.state === 'confirming'
+      ? 33
+      : payment.bitcoinDeposit?.state === 'claiming'
+        ? 66
+        : undefined;
 
   return {
     addresses: [],
@@ -142,10 +149,10 @@ const paymentToTransaction = (
     size: 0,
     status,
     statusProgress,
-    statusText: payment.bitcoinDeposit && !isComplete
+    statusText: payment.bitcoinDeposit && !isComplete && !isFailed
       ? bitcoinDepositStateText(payment.bitcoinDeposit.state)
       : undefined,
-    statusTextShort: payment.bitcoinDeposit && !isComplete
+    statusTextShort: payment.bitcoinDeposit && !isComplete && !isFailed
       ? bitcoinDepositStateShortText(payment.bitcoinDeposit.state)
       : undefined,
     time: payment.time,
@@ -286,7 +293,7 @@ export const Lightning = () => {
   const [balance, setBalance] = useState<accountApi.TBalance>();
   const [syncedAddressesCount] = useState<number>();
   const [payments, setPayments] = useState<TLightningPayment[]>();
-  const [sparkStatus, setSparkStatus] = useState<TSparkStatus>();
+  const [serviceStatus, setServiceStatus] = useState<TServiceStatus>();
   const [error, setError] = useState<string>();
   const mounted = useMountedRef();
   const blockExplorerTxPrefix = useLoad(getBlockExplorerTxPrefix);
@@ -323,27 +330,30 @@ export const Lightning = () => {
     return subscribeListPayments(onStateChange);
   }, [btcUnit, isLightningReady, lightningAccount, onStateChange]);
 
-  const loadSparkStatus = useCallback(async () => {
+  const loadServiceStatus = useCallback(async () => {
     try {
-      const status = await getSparkStatus();
+      const status = await getServiceStatus();
       if (mounted.current) {
-        setSparkStatus(status);
+        setServiceStatus(status);
       }
     } catch (err) {
       console.error(err);
       if (mounted.current) {
-        setSparkStatus({
+        setServiceStatus({
           status: 'unknown',
         });
       }
     }
   }, [mounted]);
 
+  // isLightningReady is a dependency so the boot-time status ('unknown' or
+  // 'major' while the engine is still connecting) is replaced as soon as the
+  // wallet reports ready, instead of lingering until the next poll.
   useEffect(() => {
-    loadSparkStatus();
-    const interval = window.setInterval(loadSparkStatus, sparkStatusPollInterval);
+    loadServiceStatus();
+    const interval = window.setInterval(loadServiceStatus, serviceStatusPollInterval);
     return () => window.clearInterval(interval);
-  }, [loadSparkStatus]);
+  }, [loadServiceStatus, isLightningReady]);
 
   const hasDataLoaded = balance !== undefined && payments !== undefined;
 
@@ -355,10 +365,10 @@ export const Lightning = () => {
         This is an alpha release intended for preview and testing. Only use lightning with a small amount of funds!
       </Status>
       <Status
-        hidden={sparkStatus === undefined || sparkStatus.status === 'operational'}
+        hidden={serviceStatus === undefined || serviceStatus.status === 'operational'}
         dismissibleKey=""
-        type={sparkStatus?.status === 'major' ? 'error' : 'warning'}>
-        {sparkStatus !== undefined && sparkStatus.status !== 'operational' && t(`lightning.sparkStatus.${sparkStatus.status}`)}
+        type={serviceStatus?.status === 'major' ? 'error' : 'warning'}>
+        {serviceStatus !== undefined && serviceStatus.status !== 'operational' && t(`lightning.serviceStatus.${serviceStatus.status}`)}
       </Status>
       <GlobalBanners devices={devices || {}} />
     </>

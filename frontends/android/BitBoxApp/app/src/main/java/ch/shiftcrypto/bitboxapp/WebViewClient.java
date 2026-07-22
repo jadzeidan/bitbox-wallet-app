@@ -65,7 +65,20 @@ public class WebViewClient extends android.webkit.WebViewClient {
                 try {
                     InputStream inputStream = assets.open(url.replace(baseUrl, "web/"));
                     String mimeType = Util.getMimeType(url);
+                    if (mimeType == null) {
+                        // MimeTypeMap does not know all extensions used by the wavelength
+                        // runtime assets, so fall back to hardcoded mappings.
+                        if (url.endsWith(".wasm")) {
+                            mimeType = "application/wasm";
+                        } else if (url.endsWith(".gz")) {
+                            mimeType = "application/gzip";
+                        }
+                    }
                     if (mimeType != null) {
+                        // Note: cross-origin isolation headers (COOP/COEP) would let the
+                        // wavelength WASM runtime use a worker with OPFS persistence, but
+                        // COEP blocks the cross-origin vendor iframes (buy/sell widgets).
+                        // Without them the runtime falls back to main-thread mode.
                         return new WebResourceResponse(mimeType, "UTF-8", inputStream);
                     }
                     Util.log("Unknown MimeType: " + url);

@@ -365,12 +365,10 @@ func NewBackend(arguments *arguments.Arguments, environment Environment) (*Backe
 	}
 
 	backend.lightning = lightning.NewLightning(backend.config,
-		backend.arguments.CacheDirectoryPath(),
 		backend.environment,
-		backend.Keystore, backend.httpClient,
+		backend.Keystore,
 		backend.ratesUpdater,
-		btcCoin,
-		backend.DevServers())
+		btcCoin)
 
 	backend.lightning.Observe(backend.Notify)
 	backend.lightning.Observe(func(event observable.Event) {
@@ -776,7 +774,6 @@ func (backend *Backend) Start() <-chan interface{} {
 	backend.started = true
 
 	backend.environment.OnAuthSettingChanged(backend.config.AppConfig().Backend.Authentication)
-	go backend.lightning.Connect()
 
 	go backend.ethupdater.PollBalances()
 
@@ -1201,8 +1198,6 @@ func (backend *Backend) Close() error {
 		backend.unobserveKeystore()
 		backend.unobserveKeystore = nil
 	}
-
-	backend.lightning.Disconnect()
 
 	for _, coin := range backend.coins {
 		if err := coin.Close(); err != nil {

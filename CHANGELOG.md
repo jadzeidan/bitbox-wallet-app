@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Lightning wallet is now powered by the Wavelength SDK (Ark protocol, by Lightning Labs)
 - Bitcoin: show account details for the persisted receive address type by default
 - Add external block explorer links to used addresses
 - Settings search

@@ -3,8 +3,6 @@
 package config
 
 import (
-	"time"
-
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/accounts/types"
 	"github.com/BitBoxSwiss/bitbox-wallet-app/util/jsonp"
 )
@@ -13,14 +11,15 @@ import (
 type LightningAccountConfig struct {
 	// Seed is the wallet seed generated from the device entropy.
 	Seed string `json:"seed"`
+	// WalletPassword is the wallet database password derived from the device entropy,
+	// plaintext or sealed like Seed.
+	WalletPassword string `json:"walletPassword,omitempty"`
 	// RootFingerprint is fingerprint of the keystore that generated the entropy.
 	RootFingerprint jsonp.HexBytes `json:"rootFingerprint"`
 	// Code is the code of the lightning account.
 	Code types.Code `json:"code"`
 	// Number is the lightning account incremental number.
 	Number uint16 `json:"num"`
-	// LightningAddressLastChangedAt is the date/time when the lightning address was last changed manually.
-	LightningAddressLastChangedAt *time.Time `json:"lightningAddressLastChangedAt,omitempty"`
 }
 
 // LightningConfig holds information related to the lightning config.

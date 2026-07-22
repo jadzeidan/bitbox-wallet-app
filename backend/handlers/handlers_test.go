@@ -74,6 +74,8 @@ func TestGetNativeLocale(t *testing.T) {
 
 	h := handlers.NewHandlers(back, handlers.NewConnectionData(0, ""))
 	r := httptest.NewRequest(http.MethodGet, "/api/native-locale", nil)
+	// Dev mode only serves requests addressed to localhost (DNS rebinding guard).
+	r.Host = "localhost"
 	w := httptest.NewRecorder()
 	h.Router.ServeHTTP(w, r)
 	res := w.Result()

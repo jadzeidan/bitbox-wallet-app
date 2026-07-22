@@ -5,7 +5,6 @@ package lightning
 import (
 	"encoding/json"
 	"net/http"
-	"strconv"
 
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/accounts/types"
 	"github.com/BitBoxSwiss/bitbox-wallet-app/util/jsonp"
@@ -29,23 +28,15 @@ func NewHandlers(
 	lightning *Lightning,
 ) {
 	handleNoError("/account", lightning.GetAccount).Methods("GET")
-	handleNoError("/address", lightning.GetLightningAddress).Methods("GET")
-	handleNoError("/address/domain", lightning.GetAddressDomain).Methods("GET")
-	handleNoError("/address/availability", lightning.GetAddressAvailability).Methods("GET")
-	handleNoError("/address/generate", lightning.PostGenerateAddress).Methods("POST")
-	handleNoError("/address/register", lightning.PostRegisterAddress).Methods("POST")
 	handleNoError("/ready", lightning.GetReady).Methods("GET")
 	handleNoError("/activate", lightning.PostActivate).Methods("POST")
 	handleNoError("/deactivate", lightning.PostDeactivate).Methods("POST")
 	handleNoError("/balance", lightning.GetBalance).Methods("GET")
 	handleNoError("/block-explorer-tx-prefix", lightning.GetBlockExplorerTxPrefix).Methods("GET")
-	handleNoError("/spark-status", lightning.GetSparkStatus).Methods("GET")
+	handleNoError("/service-status", lightning.GetServiceStatus).Methods("GET")
 	handleNoError("/list-payments", lightning.GetListPayments).Methods("GET")
-	handleNoError("/parse-payment-input", lightning.GetParsePaymentInput).Methods("GET")
-	handleNoError("/prepare-payment", lightning.PostPreparePayment).Methods("POST")
-	handleNoError("/boarding-address", lightning.GetBoardingAddress).Methods("GET")
-	handleNoError("/receive-payment", lightning.GetReceivePayment).Methods("GET")
-	handleNoError("/send-payment", lightning.PostSendPayment).Methods("POST")
+	handleNoError("/credentials", lightning.GetCredentials).Methods("GET")
+	handleNoError("/state", lightning.PostState).Methods("POST")
 }
 
 func errorResponse(err error) responseDto {
@@ -81,57 +72,7 @@ func (lightning *Lightning) GetBlockExplorerTxPrefix(_ *http.Request) interface{
 	}
 }
 
-// GetLightningAddress handles the GET request to retrieve the registered lightning address.
-func (lightning *Lightning) GetLightningAddress(_ *http.Request) interface{} {
-	address, err := lightning.LightningAddress()
-	if err != nil {
-		return errorResponse(err)
-	}
-	return responseDto{Success: true, Data: address}
-}
-
-// GetAddressDomain handles the GET request to retrieve the configured lightning address domain.
-func (lightning *Lightning) GetAddressDomain(_ *http.Request) interface{} {
-	return responseDto{Success: true, Data: lightning.AddressDomain()}
-}
-
-// GetAddressAvailability handles the GET request to check lightning address username availability.
-func (lightning *Lightning) GetAddressAvailability(r *http.Request) interface{} {
-	availability, err := lightning.AddressAvailability(r.URL.Query().Get("username"))
-	if err != nil {
-		return errorResponse(err)
-	}
-	return responseDto{Success: true, Data: availability}
-}
-
-// PostGenerateAddress handles the POST request to generate an available lightning address username.
-func (lightning *Lightning) PostGenerateAddress(_ *http.Request) interface{} {
-	address, err := lightning.GenerateAddress()
-	if err != nil {
-		return errorResponse(err)
-	}
-	return responseDto{Success: true, Data: address}
-}
-
-// PostRegisterAddress handles the POST request to register a lightning address username.
-func (lightning *Lightning) PostRegisterAddress(r *http.Request) interface{} {
-	var jsonBody struct {
-		Username string `json:"username"`
-	}
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&jsonBody); err != nil {
-		return errorResponse(err)
-	}
-
-	address, err := lightning.RegisterAddress(jsonBody.Username)
-	if err != nil {
-		return errorResponse(err)
-	}
-	return responseDto{Success: true, Data: address}
-}
-
-// GetReady handles the GET request to retrieve whether the lightning SDK is ready.
+// GetReady handles the GET request to retrieve whether the lightning wallet is ready.
 func (lightning *Lightning) GetReady(_ *http.Request) interface{} {
 	return responseDto{Success: true, Data: lightning.Ready()}
 }
@@ -187,13 +128,9 @@ func (lightning *Lightning) GetBalance(_ *http.Request) interface{} {
 	}
 }
 
-// GetSparkStatus handles the GET request to retrieve the Spark network status.
-func (lightning *Lightning) GetSparkStatus(_ *http.Request) interface{} {
-	status, err := lightning.SparkStatus()
-	if err != nil {
-		return errorResponse(err)
-	}
-	return responseDto{Success: true, Data: status}
+// GetServiceStatus handles the GET request to retrieve the lightning service status.
+func (lightning *Lightning) GetServiceStatus(_ *http.Request) interface{} {
+	return responseDto{Success: true, Data: lightning.ServiceStatus()}
 }
 
 // GetListPayments handles the GET request to list payments.
@@ -205,68 +142,26 @@ func (lightning *Lightning) GetListPayments(_ *http.Request) interface{} {
 	return responseDto{Success: true, Data: payments}
 }
 
-// GetBoardingAddress handles the GET request to retrieve a bitcoin boarding address.
-func (lightning *Lightning) GetBoardingAddress(_ *http.Request) interface{} {
-	address, err := lightning.BoardingAddress()
+// GetCredentials handles the GET request to retrieve the wallet credentials for the frontend
+// wallet engine.
+func (lightning *Lightning) GetCredentials(_ *http.Request) interface{} {
+	credentials, err := lightning.Credentials()
 	if err != nil {
 		return errorResponse(err)
 	}
-	return responseDto{Success: true, Data: address}
+	return responseDto{Success: true, Data: credentials}
 }
 
-// GetParsePaymentInput handles the GET request to parse a payment input.
-func (lightning *Lightning) GetParsePaymentInput(r *http.Request) interface{} {
-	input, err := lightning.ParsePaymentInput(r.URL.Query().Get("s"))
-	if err != nil {
-		return errorResponse(err)
-	}
-	return responseDto{Success: true, Data: input}
-}
-
-// PostPreparePayment handles the POST request to prepare a payment quote.
-func (lightning *Lightning) PostPreparePayment(r *http.Request) interface{} {
-	var jsonBody preparePaymentRequest
+// PostState handles the POST request pushing the current wallet state from the frontend
+// wallet engine.
+func (lightning *Lightning) PostState(r *http.Request) interface{} {
+	var state walletState
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&jsonBody); err != nil {
+	if err := decoder.Decode(&state); err != nil {
 		return errorResponse(err)
 	}
 
-	fee, err := lightning.PreparePayment(jsonBody)
-	if err != nil {
-		return errorResponse(err)
-	}
-
-	return responseDto{Success: true, Data: fee}
-}
-
-// GetReceivePayment handles the GET request to create a receive invoice.
-func (lightning *Lightning) GetReceivePayment(r *http.Request) interface{} {
-	amountSat, err := strconv.ParseUint(r.URL.Query().Get("amountSat"), 10, 64)
-	if err != nil {
-		return errorResponse(err)
-	}
-
-	receiveResponse, err := lightning.ReceivePayment(amountSat, r.URL.Query().Get("description"))
-	if err != nil {
-		return errorResponse(err)
-	}
-
-	return responseDto{Success: true, Data: receiveResponse}
-}
-
-// PostSendPayment handles the POST request to send a payment.
-func (lightning *Lightning) PostSendPayment(r *http.Request) interface{} {
-	var jsonBody sendPaymentRequest
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&jsonBody); err != nil {
-		return errorResponse(err)
-	}
-
-	if err := lightning.SendPayment(jsonBody); err != nil {
-		return errorResponse(err)
-	}
-
+	lightning.SetState(&state)
 	return responseDto{Success: true}
 }

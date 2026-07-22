@@ -8,19 +8,17 @@ import { Button, Input, NumberInput, OptionalLabel } from '@/components/forms';
 import {
   TReceivePaymentResponse,
   getLightningBalance,
-  getLightningAddress,
   getReceivePayment,
-  subscribeLightningAddress,
 } from '@/api/lightning';
 import { Status } from '@/components/status/status';
 import { QRCode } from '@/components/qrcode/qrcode';
 import { Spinner } from '@/components/spinner/Spinner';
-import { Checked, Copy, CreateInvoice } from '@/components/icon';
+import { Checked, Copy } from '@/components/icon';
 import { FormattedAmount } from '@/components/amount/amount';
 import { AmountWithUnit } from '@/components/amount/amount-with-unit';
 import { useNavigate } from 'react-router-dom';
 import { RatesContext } from '@/contexts/RatesContext';
-import { useLoad, useSync } from '@/hooks/api';
+import { useLoad } from '@/hooks/api';
 import { toLightningErrorMessage } from '@/api/lightning-errors';
 import { useSatFiatAmount } from '../hooks/use-sat-fiat-amount';
 import { type TReceiveStep, useReceivePaymentSuccess } from './use-receive-payment-success';
@@ -43,10 +41,9 @@ export function Receive() {
   const [description, setDescription] = useState<string>('');
   const [receivePaymentResponse, setReceivePaymentResponse] = useState<TReceivePaymentResponse>();
   const [receiveError, setReceiveError] = useState<string>();
-  const [step, setStep] = useState<TReceiveStep>('address');
+  const [step, setStep] = useState<TReceiveStep>('create-invoice');
   const [balanceLoadAttempt, setBalanceLoadAttempt] = useState(0);
   const lightningBalance = useLoad(getLightningBalance, [balanceLoadAttempt]);
-  const lightningAddress = useSync(getLightningAddress, subscribeLightningAddress);
   const satsBalance = lightningBalance?.available.unit === 'sat'
     ? lightningBalance.available.amount
     : lightningBalance?.available.unformattedConversions?.sat;
@@ -76,17 +73,13 @@ export function Receive() {
     setReceivePaymentResponse(undefined);
     setReceiveError(undefined);
     resetReceivedPayment();
-    setStep('address');
+    setStep('create-invoice');
   }, [resetAmountInput, resetReceivedPayment]);
 
   const back = useCallback(() => {
     switch (step) {
-    case 'address':
-      navigate('/lightning');
-      break;
     case 'create-invoice':
-      setStep('address');
-      setReceiveError(undefined);
+      navigate('/lightning');
       break;
     case 'invoice':
     case 'success':
@@ -129,46 +122,6 @@ export function Receive() {
 
   const renderSteps = () => {
     switch (step) {
-    case 'address':
-      if (lightningAddress === undefined) {
-        return <Spinner text={t('loading')} />;
-      }
-      return (
-        <View fitContent minHeight="100%">
-          <ViewContent textAlign="center">
-            <div className={styles.addressContent}>
-              <p className={styles.qrInstruction}>{t('lightning.receive.address.scanQRCode')}</p>
-              <div className={styles.addressQRCode}>
-                <QRCode data={lightningAddress || undefined} size={168} tapToCopy={false} />
-              </div>
-              {lightningAddress && (
-                <>
-                  <p className={styles.addressValue}>{lightningAddress}</p>
-                  <CopyButton
-                    className={styles.addressAction}
-                    contentClassName={styles.addressActionContent}
-                    data={lightningAddress}
-                    iconClassName={styles.addressActionIcon}
-                    successText={t('receive.qrCodeCopiedMessage')}>
-                    {t('button.copy')}
-                  </CopyButton>
-                </>
-              )}
-              <Button transparent className={styles.addressAction} onClick={newInvoice}>
-                <span className={styles.addressActionContent}>
-                  <CreateInvoice className={styles.createInvoiceIcon} height={18} width={18} />
-                  {t('lightning.receive.invoice.create')}
-                </span>
-              </Button>
-            </div>
-          </ViewContent>
-          <ViewButtons>
-            <Button secondary onClick={back}>
-              {t('button.back')}
-            </Button>
-          </ViewButtons>
-        </View>
-      );
     case 'create-invoice':
       return (
         <View fitContent minHeight="100%">

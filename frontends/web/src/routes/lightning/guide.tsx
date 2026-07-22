@@ -50,14 +50,6 @@ export const LightningReceiveGuide = () => {
         text: t('guide.lightning.receive.payment.text'),
         title: t('guide.lightning.receive.payment.title'),
       }} />
-      <Entry key="guide.lightning.receive.invoiceOrAddress" entry={{
-        text: t('guide.lightning.receive.invoiceOrAddress.text'),
-        title: t('guide.lightning.receive.invoiceOrAddress.title'),
-      }} />
-      <Entry key="guide.lightning.receive.reuseAddress" entry={{
-        text: t('guide.lightning.receive.reuseAddress.text'),
-        title: t('guide.lightning.receive.reuseAddress.title'),
-      }} />
       <Entry key="guide.lightning.receive.fee" entry={{
         text: t('guide.lightning.receive.fee.text'),
         title: t('guide.lightning.receive.fee.title'),

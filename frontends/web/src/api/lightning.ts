@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import { classifyDestination, type Balance, type PrepareSendResult } from '@lightninglabs/wavelength-web';
 import type { AccountCode, TAmountWithConversions, TBalance, TTransactionStatus } from '@/api/account';
 import type { TSubscriptionCallback, TUnsubscribe } from '@/api/subscribe';
 import { subscribeEndpoint } from '@/api/subscribe';
 import { apiGet, apiPost } from '@/utils/request';
-import { type TLightningErrorCode, TSdkError } from './lightning-errors';
+import { TLightningErrorCode, TSdkError } from './lightning-errors';
+import { requireEngine } from './wavelength/engine';
+import { toSdkError } from './wavelength/errors';
+import { getLnurlPayParams, parseLnurlPayInput, requestLnurlInvoice } from './wavelength/lnurl';
 
 export type TLightningResponse<T> =
   | {
@@ -21,6 +25,14 @@ export type TLightningAccount = {
   rootFingerprint: string;
   code: AccountCode;
   num: number;
+};
+
+export type TLightningCredentials = {
+  mnemonic: string;
+  password: string;
+  network: 'signet';
+  // Account code, used to namespace the locally persisted wallet data.
+  code: AccountCode;
 };
 
 export type TLightningBolt11Invoice = {
@@ -61,6 +73,34 @@ export type TLightningPayment = {
   bitcoinDeposit?: TBitcoinDeposit;
 };
 
+// Wallet state pushed to the backend (POST lightning/state); must match the
+// walletState/walletPayment wire types in backend/lightning exactly.
+export type TWalletPayment = {
+  id: string;
+  kind: 'send' | 'receive' | 'deposit' | 'exit';
+  status: 'pending' | 'complete' | 'failed';
+  // Signed: positive inbound, negative outbound.
+  amountSat: number;
+  feeSat: number;
+  // Unix seconds.
+  createdAt: number;
+  note?: string;
+  invoice?: string;
+  paymentHash?: string;
+  txid?: string;
+  failureReason?: string;
+};
+
+export type TWalletState = {
+  ready: boolean;
+  serverConnected: boolean;
+  blockHeight: number;
+  balanceSat: number;
+  pendingInSat: number;
+  pendingOutSat: number;
+  payments: TWalletPayment[];
+};
+
 export type TReceivePaymentRequest = {
   amountSat: number;
   description: string;
@@ -68,17 +108,6 @@ export type TReceivePaymentRequest = {
 
 export type TReceivePaymentResponse = {
   invoice: string;
-};
-
-export type TLightningAddressAvailability = {
-  username: string;
-  address: string;
-  available: boolean;
-};
-
-export type TGeneratedLightningAddress = {
-  username: string;
-  address: string;
 };
 
 export type TSendPaymentRequest = {
@@ -109,10 +138,8 @@ export type TPreparePaymentResponse = {
   totalDebitSat: number;
 };
 
-export type TServiceStatus = 'operational' | 'degraded' | 'partial' | 'major' | 'unknown';
-
-export type TSparkStatus = {
-  status: TServiceStatus;
+export type TServiceStatus = {
+  status: 'operational' | 'major' | 'unknown';
 };
 
 export enum TPaymentInputType {
@@ -130,16 +157,6 @@ export type TPaymentInput = {
 
 export type TParsePaymentInputRequest = {
   s: string;
-};
-
-const queryString = (params: Record<string, string | number | undefined | null>): string => {
-  const searchParams = new URLSearchParams();
-  Object.entries(params).forEach(([key, value]) => {
-    if (value !== undefined && value !== null) {
-      searchParams.set(key, String(value));
-    }
-  });
-  return searchParams.toString();
 };
 
 const getApiResponse = async <T>(url: string, defaultError: string = 'Error'): Promise<T> => {
@@ -168,35 +185,16 @@ export const getLightningAccount = async (): Promise<TLightningAccount | null> =
   return apiGet('lightning/account');
 };
 
-export const getLightningAddress = async (): Promise<string | null> => {
-  return getApiResponse<string | null>('lightning/address', 'Error calling getLightningAddress');
+// Fetches the wallet credentials derived by the backend from the BitBox; used
+// by the wavelength engine (api/wavelength/engine.ts) to open the wallet.
+export const getLightningCredentials = async (): Promise<TLightningCredentials> => {
+  return getApiResponse<TLightningCredentials>('lightning/credentials', 'Error calling getLightningCredentials');
 };
 
-export const getLightningAddressDomain = async (): Promise<string> => {
-  return getApiResponse<string>('lightning/address/domain', 'Error calling getLightningAddressDomain');
-};
-
-export const getLightningAddressAvailability = async (username: string): Promise<TLightningAddressAvailability> => {
-  return getApiResponse<TLightningAddressAvailability>(
-    `lightning/address/availability?${queryString({ username })}`,
-    'Error calling getLightningAddressAvailability'
-  );
-};
-
-export const postGenerateLightningAddress = async (): Promise<TGeneratedLightningAddress> => {
-  return postApiResponse<TGeneratedLightningAddress, undefined>(
-    'lightning/address/generate',
-    undefined,
-    'Error calling postGenerateLightningAddress'
-  );
-};
-
-export const postRegisterLightningAddress = async (username: string): Promise<string> => {
-  return postApiResponse<string, { username: string }>(
-    'lightning/address/register',
-    { username },
-    'Error calling postRegisterLightningAddress'
-  );
+// Pushes a wallet state snapshot to the backend, which serves balance and
+// payment list from it; used by the wavelength engine (api/wavelength/engine.ts).
+export const postLightningState = async (state: TWalletState): Promise<void> => {
+  return postApiResponse<void, TWalletState>('lightning/state', state, 'Error calling postLightningState');
 };
 
 export const getLightningReady = async (): Promise<boolean> => {
@@ -219,44 +217,209 @@ export const getBlockExplorerTxPrefix = async (): Promise<string> => {
   return getApiResponse<string>('lightning/block-explorer-tx-prefix', 'Error calling getBlockExplorerTxPrefix');
 };
 
-export const getSparkStatus = async (): Promise<TSparkStatus> => {
-  return getApiResponse<TSparkStatus>('lightning/spark-status', 'Error calling getSparkStatus');
+export const getServiceStatus = async (): Promise<TServiceStatus> => {
+  return getApiResponse<TServiceStatus>('lightning/service-status', 'Error calling getServiceStatus');
 };
 
 export const getListPayments = async (): Promise<TLightningPayment[]> => {
   return getApiResponse<TLightningPayment[]>('lightning/list-payments', 'Error calling getListPayments');
 };
 
-export const getParsePaymentInput = async (params: TParsePaymentInputRequest): Promise<TPaymentInput> => {
-  return getApiResponse<TPaymentInput>(`lightning/parse-payment-input?${queryString(params)}`, 'Error calling getParsePaymentInput');
+// Send quotes are cached per payment input and amount, so that the quote
+// approved by the user in the prepare step is the one that gets dispatched.
+type TCachedQuote = {
+  invoice: string;
+  quote: PrepareSendResult;
+};
+
+const quoteCache = new Map<string, TCachedQuote>();
+
+const quoteCacheKey = (paymentInput: string, amountSat?: number): string => {
+  return `${amountSat ?? ''}:${paymentInput}`;
+};
+
+const isQuoteUsable = (cached: TCachedQuote | undefined): cached is TCachedQuote => {
+  if (cached === undefined) {
+    return false;
+  }
+  // A margin so a quote about to expire is not dispatched.
+  return cached.quote.expiresAtUnix <= 0 || cached.quote.expiresAtUnix * 1000 > Date.now() + 5000;
+};
+
+const prepareSendQuote = async (invoice: string, amountSat?: number): Promise<PrepareSendResult> => {
+  try {
+    return await requireEngine().prepareSend(
+      amountSat === undefined ? { invoice } : { invoice, amountSat },
+    );
+  } catch (error) {
+    throw toSdkError(error, 'Error preparing the payment');
+  }
+};
+
+const prepareLnurlPay = async (paymentInput: string, amountSat: number): Promise<TCachedQuote> => {
+  const endpoint = parseLnurlPayInput(paymentInput);
+  if (!endpoint) {
+    throw new TSdkError('Invalid lightning address or LNURL', TLightningErrorCode.INVALID_PAYMENT_INPUT);
+  }
+  const params = await getLnurlPayParams(endpoint);
+  const minAmountSat = Math.ceil(params.minSendableMsat / 1000);
+  const maxAmountSat = Math.floor(params.maxSendableMsat / 1000);
+  if (amountSat < minAmountSat || amountSat > maxAmountSat) {
+    throw new TSdkError(
+      `The amount must be between ${minAmountSat} and ${maxAmountSat} sats`,
+      TLightningErrorCode.INVALID_AMOUNT,
+    );
+  }
+  const invoice = await requestLnurlInvoice(params.callback, amountSat * 1000);
+  return { invoice, quote: await prepareSendQuote(invoice) };
+};
+
+export const getParsePaymentInput = async ({ s }: TParsePaymentInputRequest): Promise<TPaymentInput> => {
+  let input = s.trim();
+  if (input.toLowerCase().startsWith('lightning:')) {
+    input = input.slice('lightning:'.length);
+  }
+  const lnurlEndpoint = parseLnurlPayInput(input);
+  if (lnurlEndpoint) {
+    const params = await getLnurlPayParams(lnurlEndpoint);
+    return {
+      type: TPaymentInputType.LNURL_PAY,
+      lnurlPay: {
+        input,
+        address: lnurlEndpoint.address,
+        domain: lnurlEndpoint.domain,
+        description: params.description,
+        minAmountSat: Math.ceil(params.minSendableMsat / 1000),
+        maxAmountSat: Math.floor(params.maxSendableMsat / 1000),
+      },
+    };
+  }
+  const destination = classifyDestination(input);
+  // 'unrepresentable' invoice amounts (sub-satoshi or beyond the safe integer
+  // range) cannot be paid, so reject them here instead of prompting the user
+  // for an amount the invoice already encodes.
+  if (destination.kind !== 'invoice' || destination.amount.status === 'unrepresentable') {
+    throw new TSdkError('Invalid payment input', TLightningErrorCode.INVALID_PAYMENT_INPUT);
+  }
+  const amountSat = destination.amount.status === 'known' ? destination.amount.sat : undefined;
+  let description: string | undefined;
+  if (amountSat !== undefined) {
+    // Best effort: a send quote carries the invoice description, and is cached
+    // for reuse by the following prepare-payment call. Zero-amount invoices
+    // cannot be quoted without an amount, so their description stays empty.
+    try {
+      const quote = await prepareSendQuote(input);
+      quoteCache.set(quoteCacheKey(input), { invoice: input, quote });
+      description = quote.invoiceDescription || undefined;
+    } catch {
+      // Parsing must still succeed when the wallet cannot quote right now.
+    }
+  }
+  return {
+    type: TPaymentInputType.BOLT11,
+    invoice: {
+      invoice: input,
+      description,
+      amountSat,
+    },
+  };
 };
 
 export const getBoardingAddress = async (): Promise<string> => {
-  return getApiResponse<string>('lightning/boarding-address', 'Error calling getBoardingAddress');
+  try {
+    const result = await requireEngine().deposit();
+    return result.address;
+  } catch (error) {
+    throw toSdkError(error, 'Error calling getBoardingAddress');
+  }
+};
+
+const totalDebitSat = (quote: PrepareSendResult): number => {
+  return quote.totalOutflowKnown
+    ? quote.expectedTotalOutflowSat
+    : quote.amountSat + quote.expectedFeeSat;
 };
 
 export const postPreparePayment = async (data: TPreparePaymentRequest): Promise<TPreparePaymentResponse> => {
-  return postApiResponse<TPreparePaymentResponse, TPreparePaymentRequest>(
-    'lightning/prepare-payment',
-    data,
-    'Error calling postPreparePayment'
-  );
+  const key = quoteCacheKey(data.paymentInput, data.amountSat);
+  let cached = quoteCache.get(key);
+  if (!isQuoteUsable(cached)) {
+    switch (data.type) {
+    case TPaymentInputType.BOLT11:
+      cached = {
+        invoice: data.paymentInput,
+        quote: await prepareSendQuote(data.paymentInput, data.amountSat),
+      };
+      break;
+    case TPaymentInputType.LNURL_PAY:
+      cached = await prepareLnurlPay(data.paymentInput, data.amountSat);
+      break;
+    }
+    quoteCache.set(key, cached);
+  }
+  return {
+    amountSat: cached.quote.amountSat,
+    feeSat: cached.quote.expectedFeeSat,
+    totalDebitSat: totalDebitSat(cached.quote),
+  };
 };
 
 export const postSendPayment = async (data: TSendPaymentRequest): Promise<void> => {
-  return postApiResponse<void, TSendPaymentRequest>('lightning/send-payment', data, 'Error calling postSendPayment');
+  const key = quoteCacheKey(data.paymentInput, data.amountSat);
+  let cached = quoteCache.get(key);
+  if (!isQuoteUsable(cached)) {
+    switch (data.type) {
+    case TPaymentInputType.BOLT11:
+      cached = {
+        invoice: data.paymentInput,
+        quote: await prepareSendQuote(data.paymentInput, data.amountSat),
+      };
+      break;
+    case TPaymentInputType.LNURL_PAY:
+      cached = await prepareLnurlPay(data.paymentInput, data.amountSat);
+      break;
+    }
+    quoteCache.set(key, cached);
+  }
+  const { quote } = cached;
+  if (quote.expectedFeeSat > data.approvedFeeSat) {
+    // The cached quote stays around, so the re-prepare triggered by the UI
+    // shows the updated fee for approval.
+    throw new TSdkError('The network fee changed', TLightningErrorCode.PAYMENT_APPROVAL_REQUIRED);
+  }
+  let balance: Balance;
+  try {
+    balance = await requireEngine().client.balance();
+  } catch (error) {
+    throw toSdkError(error, 'Error calling postSendPayment');
+  }
+  if (totalDebitSat(quote) > balance.confirmedSat) {
+    throw new TSdkError('Insufficient funds to send this payment', TLightningErrorCode.INSUFFICIENT_FUNDS);
+  }
+  try {
+    await requireEngine().sendPrepared(quote);
+  } catch (error) {
+    throw toSdkError(error, 'Error calling postSendPayment');
+  } finally {
+    // Quotes are single use; a retry after failure has to re-prepare.
+    quoteCache.delete(key);
+  }
 };
 
-export const getReceivePayment = async (params: TReceivePaymentRequest): Promise<TReceivePaymentResponse> => {
-  return getApiResponse<TReceivePaymentResponse>(`lightning/receive-payment?${queryString(params)}`, 'Error calling getReceivePayment');
+export const getReceivePayment = async ({ amountSat, description }: TReceivePaymentRequest): Promise<TReceivePaymentResponse> => {
+  try {
+    const result = await requireEngine().receive({
+      amountSat,
+      memo: description || undefined,
+    });
+    return { invoice: result.invoice };
+  } catch (error) {
+    throw toSdkError(error, 'Error calling getReceivePayment');
+  }
 };
 
 export const subscribeLightningAccount = (cb: TSubscriptionCallback<TLightningAccount | null>): TUnsubscribe => {
   return subscribeEndpoint('lightning/account', cb);
-};
-
-export const subscribeLightningAddress = (cb: TSubscriptionCallback<string | null>): TUnsubscribe => {
-  return subscribeEndpoint('lightning/address', cb);
 };
 
 export const subscribeLightningReady = (cb: TSubscriptionCallback<boolean>): TUnsubscribe => {

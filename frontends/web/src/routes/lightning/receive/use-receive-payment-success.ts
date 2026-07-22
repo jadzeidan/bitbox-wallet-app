@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   type TLightningPayment,
   type TReceivePaymentResponse,
@@ -10,7 +10,7 @@ import {
 import { useMountedRef } from '@/hooks/mount';
 import { unsubscribe } from '@/utils/subscriptions';
 
-export type TReceiveStep = 'address' | 'create-invoice' | 'wait' | 'invoice' | 'success';
+export type TReceiveStep = 'create-invoice' | 'wait' | 'invoice' | 'success';
 
 type TProps = {
   onSuccess: () => void;
@@ -24,8 +24,6 @@ export const useReceivePaymentSuccess = ({
   step,
 }: TProps) => {
   const mounted = useMountedRef();
-  const hasLoadedPayments = useRef(false);
-  const paymentStatuses = useRef<Map<TLightningPayment['id'], TLightningPayment['status']>>(new Map());
   const [payments, setPayments] = useState<TLightningPayment[]>();
   const [receivedPayment, setReceivedPayment] = useState<TLightningPayment>();
 
@@ -50,38 +48,14 @@ export const useReceivePaymentSuccess = ({
     return () => unsubscribe(subscriptions);
   }, [loadPayments]);
 
-  // match paid invoices, or detect new payments to the lightning address after the first loaded payment list.
+  // created invoices can be matched exactly by their invoice string.
   useEffect(() => {
-    if (!payments) {
+    if (!payments || !receivePaymentResponse || step !== 'invoice') {
       return;
     }
 
-    const isInitialized = hasLoadedPayments.current;
-    const previousStatuses = paymentStatuses.current;
-    // store statuses before matching so old completed payments do not reopen the success screen.
-    paymentStatuses.current = new Map(payments.map(payment => [payment.id, payment.status]));
-    hasLoadedPayments.current = true;
-
-    if (receivePaymentResponse && step === 'invoice') {
-      // created invoices can be matched exactly by their invoice string.
-      const payment = payments.find((payment) => payment.type === 'receive' && payment.invoice === receivePaymentResponse.invoice);
-      if (payment?.status === 'complete') {
-        setReceivedPayment(payment);
-        onSuccess();
-      }
-      return;
-    }
-
-    if (!isInitialized || step !== 'address') {
-      return;
-    }
-
-    const payment = payments.find((payment) => (
-      payment.type === 'receive'
-      && payment.status === 'complete'
-      && previousStatuses.get(payment.id) !== 'complete'
-    ));
-    if (payment) {
+    const payment = payments.find((payment) => payment.type === 'receive' && payment.invoice === receivePaymentResponse.invoice);
+    if (payment?.status === 'complete') {
       setReceivedPayment(payment);
       onSuccess();
     }
