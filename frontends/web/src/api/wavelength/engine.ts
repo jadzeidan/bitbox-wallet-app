@@ -363,5 +363,8 @@ if (import.meta.env.DEV) {
   (self as any).wavelengthDebug = {
     deposit: () => requireEngine().deposit(),
     snapshot: () => requireEngine().getSnapshot(),
+    // Full engine access for manual debugging, e.g.
+    // `await wavelengthDebug.engine().list({ view: 'onchain' })`.
+    engine: () => requireEngine(),
   };
 }
