@@ -39,10 +39,11 @@ type BalanceAndBlockNumberFetcher interface {
 type TokenTransactionsFetcher interface {
 	BalanceAndBlockNumberFetcher
 	TokenTransactionsByContract(
+		ctx context.Context,
 		blockTipHeight *big.Int,
 		address common.Address,
-		endBlock *big.Int,
-	) (map[common.Address][]*accounts.TransactionData, error)
+		startBlock, endBlock *big.Int,
+	) (map[common.Address][]*accounts.TransactionData, *big.Int, error)
 }
 
 type tipEntry struct {
@@ -463,14 +464,19 @@ func (u *Updater) prefetchTokenTransactions(
 		if len(tokenAccounts) < 2 {
 			continue
 		}
-		transactionsByContract, err := etherScanClient.TokenTransactionsByContract(
+		transactionsByContract, truncatedBelow, err := etherScanClient.TokenTransactionsByContract(
+			context.TODO(),
 			blockNumber,
 			address,
+			big.NewInt(0),
 			blockNumber,
 		)
 		if err != nil {
 			u.log.WithError(err).Errorf("Could not get token transactions for address %s", address.Hex())
 			continue
+		}
+		if truncatedBelow != nil {
+			u.log.Errorf("token transaction history for address %s is truncated below block %s", address.Hex(), truncatedBelow)
 		}
 		for _, account := range tokenAccounts {
 			contractAddress := account.coin.erc20Token.ContractAddress()

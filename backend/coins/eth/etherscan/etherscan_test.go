@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/accounts"
+	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/coins/eth/erc20"
 	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -299,6 +300,82 @@ func TestTransactionReceiptTransportErrorIsNotNotFound(t *testing.T) {
 	require.NotErrorIs(t, err, ethereum.NotFound)
 }
 
+func jsonResult(t *testing.T, rows []map[string]string) *http.Response {
+	t.Helper()
+	body, err := json.Marshal(struct {
+		Result []map[string]string `json:"result"`
+	}{Result: rows})
+	require.NoError(t, err)
+	return jsonRPCResponse(t, string(body))
+}
+
+func TestFetchTxListReportsTruncationBoundary(t *testing.T) {
+	old := PageSizeThreshold
+	PageSizeThreshold = 2
+	defer func() { PageSizeThreshold = old }()
+
+	addr := common.HexToAddress("0x0000000000000000000000000000000000000001")
+	other := common.HexToAddress("0x0000000000000000000000000000000000000002")
+	contract := common.HexToAddress("0x0000000000000000000000000000000000000003")
+	// A full page (== PageSizeThreshold) whose rows all sit in one block: pagination stalls, so the
+	// window at and below block 50 is reported as possibly-truncated.
+	page := []map[string]string{
+		makeTokenTx(fmt.Sprintf("0x%064x", 1), "50", other, addr, contract),
+		makeTokenTx(fmt.Sprintf("0x%064x", 2), "50", other, addr, contract),
+	}
+	etherScan := newTestEtherScan(func(req *http.Request) *http.Response {
+		return jsonResult(t, page)
+	})
+
+	byContract, truncatedBelow, err := etherScan.TokenTransactionsByContract(
+		context.Background(), big.NewInt(100), addr, big.NewInt(0), big.NewInt(100))
+	require.NoError(t, err)
+	require.NotNil(t, truncatedBelow)
+	require.Equal(t, int64(50), truncatedBelow.Int64())
+	require.Len(t, byContract[contract], 2)
+}
+
+func TestTransactionsUniqueInternalIDForDuplicateTokenTransfers(t *testing.T) {
+	addr := common.HexToAddress("0x0000000000000000000000000000000000000001")
+	other := common.HexToAddress("0x0000000000000000000000000000000000000002")
+	contract := common.HexToAddress("0x0000000000000000000000000000000000000003")
+	hash := fmt.Sprintf("0x%064x", 7)
+	// Two identical transfer logs sharing one tx hash (a contract transferring twice in one tx).
+	dup := makeTokenTx(hash, "50", other, addr, contract)
+	etherScan := newTestEtherScan(func(req *http.Request) *http.Response {
+		return jsonResult(t, []map[string]string{dup, dup})
+	})
+
+	token := erc20.NewToken(contract.Hex(), 18)
+	txs, truncatedBelow, err := etherScan.Transactions(
+		context.Background(), big.NewInt(100), addr, big.NewInt(0), big.NewInt(100), token)
+	require.NoError(t, err)
+	require.Nil(t, truncatedBelow)
+	require.Len(t, txs, 2)
+	require.Equal(t, hash, txs[0].InternalID)
+	require.Equal(t, hash+"-token-1", txs[1].InternalID)
+}
+
+func TestTransactionsClampsConfirmationsOnLaggingTip(t *testing.T) {
+	addr := common.HexToAddress("0x0000000000000000000000000000000000000001")
+	other := common.HexToAddress("0x0000000000000000000000000000000000000002")
+	contract := common.HexToAddress("0x0000000000000000000000000000000000000003")
+	// Tx mined at block 50, but the reported tip is only 10 (a lagging proxy node). Without the
+	// clamp this underflows the uint64 confirmation subtraction into a huge count.
+	tx := makeTokenTx(fmt.Sprintf("0x%064x", 5), "50", other, addr, contract)
+	etherScan := newTestEtherScan(func(req *http.Request) *http.Response {
+		return jsonResult(t, []map[string]string{tx})
+	})
+
+	token := erc20.NewToken(contract.Hex(), 18)
+	txs, _, err := etherScan.Transactions(
+		context.Background(), big.NewInt(10), addr, big.NewInt(0), big.NewInt(10), token)
+	require.NoError(t, err)
+	require.Len(t, txs, 1)
+	require.Equal(t, 0, txs[0].NumConfirmations)
+	require.Equal(t, accounts.TxStatusPending, txs[0].Status)
+}
+
 func TestTokenTransactionsByContractPaginationDedup(t *testing.T) {
 	// Arrange: construct deterministic addresses and a duplicate tx hash.
 	address := common.HexToAddress("0x0000000000000000000000000000000000000001")
@@ -306,15 +383,15 @@ func TestTokenTransactionsByContractPaginationDedup(t *testing.T) {
 	contract := common.HexToAddress("0x0000000000000000000000000000000000000003")
 
 	dupHash := fmt.Sprintf("0x%064x", 1)
-	// Page 1 mimics a full Etherscan page (maxTokenTransactionsPerQuery entries),
+	// Page 1 mimics a full Etherscan page (PageSizeThreshold entries),
 	// including a duplicate hash and a last entry that sets the next page boundary.
-	page1 := make([]map[string]string, 0, maxTokenTransactionsPerQuery)
+	page1 := make([]map[string]string, 0, PageSizeThreshold)
 	page1 = append(
 		page1,
 		makeTokenTx(dupHash, "500", address, to, contract),
 		makeTokenTx(dupHash, "500", address, to, contract),
 	)
-	for i := 0; len(page1) < maxTokenTransactionsPerQuery; i++ {
+	for i := 0; len(page1) < PageSizeThreshold; i++ {
 		hash := fmt.Sprintf("0x%064x", i+2)
 		page1 = append(page1, makeTokenTx(hash, "600", address, to, contract))
 	}
@@ -358,16 +435,19 @@ func TestTokenTransactionsByContractPaginationDedup(t *testing.T) {
 
 	// Act: call the pagination code starting at endblock 9999.
 	etherScan := NewEtherScan("1", client, rate.NewLimiter(rate.Inf, 1))
-	result, err := etherScan.TokenTransactionsByContract(
+	result, truncatedBelow, err := etherScan.TokenTransactionsByContract(
+		context.Background(),
 		big.NewInt(10000),
 		address,
+		big.NewInt(0),
 		big.NewInt(9999),
 	)
 	require.NoError(t, err)
+	require.Nil(t, truncatedBelow)
 
 	// Assert: all unique txs are returned and the duplicate appears only twice.
 	transactions := result[contract]
-	require.Len(t, transactions, maxTokenTransactionsPerQuery+1)
+	require.Len(t, transactions, PageSizeThreshold+1)
 
 	dupCount := 0
 	for _, tx := range transactions {

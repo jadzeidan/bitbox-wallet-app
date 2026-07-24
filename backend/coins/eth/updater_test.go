@@ -46,13 +46,14 @@ type transactionsSourceMock struct {
 }
 
 func (m *transactionsSourceMock) Transactions(
+	ctx context.Context,
 	blockTipHeight *big.Int,
 	address common.Address,
-	endBlock *big.Int,
+	startBlock, endBlock *big.Int,
 	erc20Token *erc20.Token,
-) ([]*accounts.TransactionData, error) {
+) ([]*accounts.TransactionData, *big.Int, error) {
 	m.calls++
-	return m.txs, nil
+	return m.txs, nil, nil
 }
 
 func newAccount(t *testing.T, erc20Token *erc20.Token, erc20error bool) *eth.Account {
@@ -502,10 +503,11 @@ func TestUpdateBalancesPrefetchTokenTransactions(t *testing.T) {
 			return blockNumber, nil
 		},
 		TokenTransactionsByContractFunc: func(
+			ctx context.Context,
 			blockTipHeight *big.Int,
 			address common.Address,
-			endBlock *big.Int,
-		) (map[common.Address][]*accounts.TransactionData, error) {
+			startBlock, endBlock *big.Int,
+		) (map[common.Address][]*accounts.TransactionData, *big.Int, error) {
 			tokenTxCalls++
 			require.Equal(t, blockNumber, blockTipHeight)
 			require.Equal(t, blockNumber, endBlock)
@@ -513,7 +515,7 @@ func TestUpdateBalancesPrefetchTokenTransactions(t *testing.T) {
 			return map[common.Address][]*accounts.TransactionData{
 				tokenA.ContractAddress(): {makeConfirmedTx("tx-a")},
 				tokenB.ContractAddress(): {makeConfirmedTx("tx-b")},
-			}, nil
+			}, nil, nil
 		},
 	}
 
@@ -537,14 +539,15 @@ func TestUpdateBalancesPrefetchNilVsEmptyFallback(t *testing.T) {
 			return blockNumber, nil
 		},
 		TokenTransactionsByContractFunc: func(
+			ctx context.Context,
 			blockTipHeight *big.Int,
 			_ common.Address,
-			endBlock *big.Int,
-		) (map[common.Address][]*accounts.TransactionData, error) {
+			startBlock, endBlock *big.Int,
+		) (map[common.Address][]*accounts.TransactionData, *big.Int, error) {
 			tokenTxCalls++
 			require.Equal(t, blockNumber, blockTipHeight)
 			require.Equal(t, blockNumber, endBlock)
-			return tokenTxResult, nil
+			return tokenTxResult, nil, nil
 		},
 	}
 

@@ -327,12 +327,19 @@ func (account *Account) confirmedTransactions() ([]*accounts.TransactionData, er
 	var confirmedTransactions []*accounts.TransactionData
 	transactionsSource := account.coin.TransactionsSource()
 	if transactionsSource != nil {
+		// Fetch the full history (startBlock 0) each poll for now; the incremental-sync workstream
+		// replaces this with a persisted cursor.
+		var truncatedBelow *big.Int
 		var err error
-		confirmedTransactions, err = transactionsSource.Transactions(
+		confirmedTransactions, truncatedBelow, err = transactionsSource.Transactions(
+			context.TODO(),
 			account.blockNumber,
-			account.address.Address, account.blockNumber, account.coin.erc20Token)
+			account.address.Address, big.NewInt(0), account.blockNumber, account.coin.erc20Token)
 		if err != nil {
 			return nil, err
+		}
+		if truncatedBelow != nil {
+			account.log.Errorf("transaction history is truncated below block %s", truncatedBelow)
 		}
 	}
 	return confirmedTransactions, nil
