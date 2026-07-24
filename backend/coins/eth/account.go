@@ -12,6 +12,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/accounts"
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/accounts/errors"
@@ -71,6 +72,12 @@ type Account struct {
 
 	closed bool
 
+	// inactive mirrors Config().Config.Inactive for race-free reads from the updater goroutines.
+	// It is written at construction and by the backend when the user toggles the account (under
+	// accountsAndKeystoreLock), and read lock-free by the update path — hence an atomic, since
+	// readers and writers hold different locks (unlike `closed`).
+	inactive atomic.Bool
+
 	// enqueueUpdateCh is used to invoke an account update outside of the regular poll update
 	// interval.
 	enqueueUpdateCh chan *Account
@@ -116,6 +123,7 @@ func NewAccount(
 
 		log: log,
 	}
+	account.inactive.Store(config.Config.Inactive)
 
 	return account
 }
@@ -130,6 +138,18 @@ func (account *Account) Info() *accounts.Info {
 func (account *Account) isClosed() bool {
 	defer account.initializedLock.RLock()()
 	return account.closed
+}
+
+// isInactive reports whether the user deactivated this account. Read lock-free by the update path.
+func (account *Account) isInactive() bool {
+	return account.inactive.Load()
+}
+
+// SetInactiveFlag mirrors the persisted Inactive flag into the loaded account. The backend calls it
+// whenever it changes the persisted flag of an already-loaded account; NewAccount initializes it
+// from config.Config.Inactive.
+func (account *Account) SetInactiveFlag(inactive bool) {
+	account.inactive.Store(inactive)
 }
 
 func (account *Account) isInitialized() bool {

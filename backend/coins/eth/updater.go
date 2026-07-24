@@ -157,7 +157,7 @@ func (u *Updater) UpdateBalancesAndBlockNumber(ethAccounts []*Account, etherScan
 
 	ethNonErc20Addresses := make([]common.Address, 0, len(ethAccounts))
 	for _, account := range ethAccounts {
-		if account.isClosed() {
+		if account.isClosed() || account.isInactive() {
 			continue
 		}
 		address, err := account.Address()
@@ -190,7 +190,7 @@ func (u *Updater) UpdateBalancesAndBlockNumber(ethAccounts []*Account, etherScan
 	}
 
 	for _, account := range ethAccounts {
-		if account.isClosed() {
+		if account.isClosed() || account.isInactive() {
 			continue
 		}
 		var iterationErr error
@@ -263,7 +263,7 @@ func (u *Updater) prefetchTokenTransactions(
 ) map[*Account][]*accounts.TransactionData {
 	tokenAccountsByAddress := map[common.Address][]*Account{}
 	for _, account := range ethAccounts {
-		if account.isClosed() || !IsERC20(account) {
+		if account.isClosed() || account.isInactive() || !IsERC20(account) {
 			continue
 		}
 		address, err := account.Address()

@@ -279,6 +279,39 @@ func TestUpdateBalancesRecoversAfterTransientOffline(t *testing.T) {
 	assertAccountBalance(t, account, big.NewInt(1000))
 }
 
+func TestUpdateBalancesSkipsInactiveAccounts(t *testing.T) {
+	updatedAddresses := []common.Address{}
+	balanceFetcher := &mocks.BalanceAndBlockNumberFetcherMock{
+		BalancesFunc: func(ctx context.Context, addresses []common.Address) (map[common.Address]*big.Int, error) {
+			updatedAddresses = addresses
+			balances := make(map[common.Address]*big.Int)
+			for _, address := range addresses {
+				balances[address] = big.NewInt(1000)
+			}
+			return balances, nil
+		},
+		BlockNumberFunc: func(ctx context.Context) (*big.Int, error) {
+			return big.NewInt(100), nil
+		},
+	}
+
+	updater := eth.NewUpdater(nil, nil, nil, nil)
+	account := newAccount(t, nil, false)
+	defer account.Close()
+	address, err := account.Address()
+	require.NoError(t, err)
+
+	// Inactive: the sweep must not fetch the account's balance.
+	account.SetInactiveFlag(true)
+	updater.UpdateBalancesAndBlockNumber([]*eth.Account{account}, balanceFetcher)
+	require.NotContains(t, updatedAddresses, address.Address)
+
+	// Re-activated: the sweep includes it again.
+	account.SetInactiveFlag(false)
+	updater.UpdateBalancesAndBlockNumber([]*eth.Account{account}, balanceFetcher)
+	require.Contains(t, updatedAddresses, address.Address)
+}
+
 func makeConfirmedTx(id string) *accounts.TransactionData {
 	amount := coin.NewAmountFromInt64(1)
 	return &accounts.TransactionData{
