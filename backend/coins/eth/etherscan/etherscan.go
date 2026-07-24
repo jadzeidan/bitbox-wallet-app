@@ -564,15 +564,16 @@ func (etherScan *EtherScan) TransactionByHash(
 
 // BlockNumber implements rpc.Interface.
 func (etherScan *EtherScan) BlockNumber(ctx context.Context) (*big.Int, error) {
+	// eth_blockNumber returns just the latest block number (a ~40-byte response), instead of
+	// eth_getBlockByNumber which downloads the full block header (logsBloom, extraData, ...) only
+	// for the number.
 	params := url.Values{}
-	params.Set("action", "eth_getBlockByNumber")
-	params.Set("tag", "latest")
-	params.Set("boolean", "false")
-	var header *types.Header
-	if err := etherScan.rpcCall(ctx, params, &header); err != nil {
+	params.Set("action", "eth_blockNumber")
+	var result hexutil.Big
+	if err := etherScan.rpcCall(ctx, params, &result); err != nil {
 		return nil, err
 	}
-	return header.Number, nil
+	return (*big.Int)(&result), nil
 }
 
 // Balance implements rpc.Interface.
@@ -765,6 +766,22 @@ func (etherScan *EtherScan) SuggestGasTipCap(ctx context.Context) (*big.Int, err
 	return nil, errp.New("not implemented")
 }
 
+// gweiStringToWei converts a decimal gwei string (e.g. "0.663812392471") to wei, flooring any
+// sub-wei remainder. Rejects negative and rational ("2/3") inputs. Note big.Rat.SetString also
+// accepts exponent forms ("6.63e-1"); these convert correctly and are accepted.
+func gweiStringToWei(s string) (*big.Int, error) {
+	if strings.ContainsRune(s, '/') {
+		return nil, errp.Newf("invalid gwei value %q", s)
+	}
+	rat, ok := new(big.Rat).SetString(s)
+	if !ok || rat.Sign() < 0 {
+		return nil, errp.Newf("invalid gwei value %q", s)
+	}
+	// Conversion from Gwei to Wei.
+	rat.Mul(rat, new(big.Rat).SetInt64(1e9))
+	return new(big.Int).Quo(rat.Num(), rat.Denom()), nil // Quo on non-negatives == floor
+}
+
 // FeeTargets returns three priorities with fee targets estimated by Etherscan
 // https://docs.etherscan.io/api-endpoints/gas-tracker#get-gas-oracle
 // FeeTargets implements rpc.Interface.
@@ -772,7 +789,7 @@ func (etherScan *EtherScan) SuggestGasTipCap(ctx context.Context) (*big.Int, err
 func (etherScan *EtherScan) FeeTargets(ctx context.Context) ([]*ethtypes.FeeTarget, error) {
 	// TODO: Use timeout.
 	var result struct {
-		// Values are in Gwei*10
+		// Values are in Gwei, possibly fractional.
 		Result struct {
 			High    string `json:"FastGasPrice"`
 			Normal  string `json:"ProposeGasPrice"`
@@ -786,33 +803,23 @@ func (etherScan *EtherScan) FeeTargets(ctx context.Context) ([]*ethtypes.FeeTarg
 	if err := etherScan.call(ctx, params, &result); err != nil {
 		return nil, err
 	}
-	// Convert string fields to int64
-	high, err := strconv.ParseInt(result.Result.High, 10, 64)
+
+	highFeeCap, err := gweiStringToWei(result.Result.High)
 	if err != nil {
 		return nil, err
 	}
-
-	normal, err := strconv.ParseInt(result.Result.Normal, 10, 64)
+	normalFeeCap, err := gweiStringToWei(result.Result.Normal)
 	if err != nil {
 		return nil, err
 	}
-
-	low, err := strconv.ParseInt(result.Result.Low, 10, 64)
+	lowFeeCap, err := gweiStringToWei(result.Result.Low)
 	if err != nil {
 		return nil, err
 	}
-
-	baseFee, err := strconv.ParseFloat(result.Result.BaseFee, 64)
+	baseFeeWei, err := gweiStringToWei(result.Result.BaseFee)
 	if err != nil {
 		return nil, err
 	}
-	// Conversion from Gwei to Wei.
-	factor := big.NewInt(1e9)
-
-	baseFeeWei := new(big.Int).Mul(big.NewInt(int64(baseFee)), factor)
-	highFeeCap := new(big.Int).Mul(big.NewInt(high), factor)
-	normalFeeCap := new(big.Int).Mul(big.NewInt(normal), factor)
-	lowFeeCap := new(big.Int).Mul(big.NewInt(low), factor)
 
 	if baseFeeWei.Cmp(highFeeCap) >= 0 || baseFeeWei.Cmp(normalFeeCap) >= 0 || baseFeeWei.Cmp(lowFeeCap) >= 0 {
 		return nil, errp.New("baseFeeWei must be smaller than GasFeeCap")
