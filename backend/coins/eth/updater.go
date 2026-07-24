@@ -193,38 +193,51 @@ func (u *Updater) UpdateBalancesAndBlockNumber(ethAccounts []*Account, etherScan
 		if account.isClosed() {
 			continue
 		}
+		var iterationErr error
 		address, err := account.Address()
 		if err != nil {
 			u.log.WithError(err).Errorf("Could not get address for account %s", account.Config().Config.Code)
 			account.SetOffline(err)
+			iterationErr = err
 		}
 		var balance *big.Int
-		switch {
-		case IsERC20(account):
-			var err error
-			balance, err = account.coin.client.ERC20Balance(account.address.Address, account.coin.erc20Token)
-			if err != nil {
-				u.log.WithError(err).Errorf("Could not get ERC20 balance for address %s", address.Address.Hex())
-				account.SetOffline(err)
-			}
-		case updateNonERC20:
-			var ok bool
-			balance, ok = balances[address.Address]
-			if !ok {
-				errMsg := fmt.Sprintf("Could not find balance for address %s", address.Address.Hex())
+		if iterationErr == nil {
+			switch {
+			case IsERC20(account):
+				var err error
+				balance, err = account.coin.client.ERC20Balance(account.address.Address, account.coin.erc20Token)
+				if err != nil {
+					u.log.WithError(err).Errorf("Could not get ERC20 balance for address %s", address.Address.Hex())
+					account.SetOffline(err)
+					iterationErr = err
+				}
+			case updateNonERC20:
+				var ok bool
+				balance, ok = balances[address.Address]
+				if !ok {
+					errMsg := fmt.Sprintf("Could not find balance for address %s", address.Address.Hex())
+					u.log.Error(errMsg)
+					offlineErr := errp.Newf(errMsg)
+					account.SetOffline(offlineErr)
+					iterationErr = offlineErr
+				}
+			default:
+				// If we get there, this is a non-erc20 account and we failed getting balances.
+				// If we couldn't get the balances for non-erc20 accounts, we mark them as offline
+				errMsg := fmt.Sprintf("Could not get balance for address %s", address.Address.Hex())
 				u.log.Error(errMsg)
-				account.SetOffline(errp.Newf(errMsg))
+				offlineErr := errp.Newf(errMsg)
+				account.SetOffline(offlineErr)
+				iterationErr = offlineErr
 			}
-		default:
-			// If we get there, this is a non-erc20 account and we failed getting balances.
-			// If we couldn't get the balances for non-erc20 accounts, we mark them as offline
-			errMsg := fmt.Sprintf("Could not get balance for address %s", address.Address.Hex())
-			u.log.Error(errMsg)
-			account.SetOffline(errp.Newf(errMsg))
 		}
 
-		if account.Offline() != nil {
-			continue // Skip updating balance if the account is offline.
+		// Gate on this sweep's own failure, not the persistent account.Offline() flag: an account
+		// that went offline in a previous sweep but fetched successfully now must reach
+		// account.Update and the SetOffline(nil) below, otherwise it stays offline forever until a
+		// ReinitializeAccounts.
+		if iterationErr != nil {
+			continue // Skip updating balance if this sweep failed for the account.
 		}
 		var confirmedTransactions []*accounts.TransactionData
 		if prefetched, ok := prefetchedTokenTxsByAccount[account]; ok {

@@ -244,6 +244,41 @@ func TestUpdateBalancesWithError(t *testing.T) {
 
 }
 
+func TestUpdateBalancesRecoversAfterTransientOffline(t *testing.T) {
+	shouldFail := true
+	balanceFetcher := &mocks.BalanceAndBlockNumberFetcherMock{
+		BalancesFunc: func(ctx context.Context, addresses []common.Address) (map[common.Address]*big.Int, error) {
+			if shouldFail {
+				return nil, errp.New("transient balance fetch error")
+			}
+			balances := make(map[common.Address]*big.Int)
+			for _, address := range addresses {
+				balances[address] = big.NewInt(1000)
+			}
+			return balances, nil
+		},
+		BlockNumberFunc: func(ctx context.Context) (*big.Int, error) {
+			return big.NewInt(100), nil
+		},
+	}
+
+	updater := eth.NewUpdater(nil, nil, nil, nil)
+	account := newAccount(t, nil, false)
+	defer account.Close()
+
+	// First sweep fails: the account goes offline.
+	updater.UpdateBalancesAndBlockNumber([]*eth.Account{account}, balanceFetcher)
+	require.Error(t, account.Offline())
+
+	// Second sweep succeeds: the account must recover. Before the iteration-local failure flag,
+	// the gate read the persistent Offline() flag from the failed sweep, so the account stayed
+	// offline forever (until a ReinitializeAccounts) even though the fetch now succeeds.
+	shouldFail = false
+	updater.UpdateBalancesAndBlockNumber([]*eth.Account{account}, balanceFetcher)
+	require.NoError(t, account.Offline())
+	assertAccountBalance(t, account, big.NewInt(1000))
+}
+
 func makeConfirmedTx(id string) *accounts.TransactionData {
 	amount := coin.NewAmountFromInt64(1)
 	return &accounts.TransactionData{
