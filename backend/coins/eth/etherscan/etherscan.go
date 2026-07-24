@@ -34,6 +34,11 @@ import (
 // Etherscan rate limits to one request per 0.2 seconds.
 var CallsPerSec = 3.8
 
+// requestTimeout bounds a single etherscan HTTP request (measured after a rate-limiter slot is
+// acquired). It is a package var so tests can shorten it; the default is generous for Tor and for
+// large txlist response bodies.
+var requestTimeout = 60 * time.Second
+
 const (
 	maxAddressesForBalances      = 20
 	maxGetRequestTargetLength    = 6000
@@ -74,6 +79,12 @@ func (etherScan *EtherScan) callWithMethod(
 	if err := etherScan.limiter.Wait(ctx); err != nil {
 		return errp.WithStack(err)
 	}
+	// Bound each request after acquiring a rate-limiter slot, so time queued behind the limiter
+	// does not eat the request budget. The deadline covers connect, headers, and body read
+	// (io.ReadAll respects the request context), so a single stalled connection can no longer wedge
+	// the caller (and its account lock / bbolt tx) indefinitely.
+	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
+	defer cancel()
 	params.Set("chainId", etherScan.chainId)
 	encodedParams := params.Encode()
 	requestURL := etherScan.url
@@ -787,7 +798,6 @@ func gweiStringToWei(s string) (*big.Int, error) {
 // FeeTargets implements rpc.Interface.
 // Note: This is not a true RPC but a custom Etherscan API call which implements their own fee estimation.
 func (etherScan *EtherScan) FeeTargets(ctx context.Context) ([]*ethtypes.FeeTarget, error) {
-	// TODO: Use timeout.
 	var result struct {
 		// Values are in Gwei, possibly fractional.
 		Result struct {

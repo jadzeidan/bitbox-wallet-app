@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/accounts"
 	ethereum "github.com/ethereum/go-ethereum"
@@ -163,6 +164,25 @@ func TestRPCProxyUsesPOSTForLargeSendTransactionRequest(t *testing.T) {
 		Data:     bytes.Repeat([]byte{0xab}, 3000),
 	})
 	require.NoError(t, etherScan.SendTransaction(context.Background(), tx))
+}
+
+func TestRequestTimeout(t *testing.T) {
+	old := requestTimeout
+	requestTimeout = 50 * time.Millisecond
+	defer func() { requestTimeout = old }()
+
+	etherScan := newTestEtherScan(nil)
+	etherScan.httpClient = &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			// Simulate a stalled connection: block until the per-request deadline cancels the
+			// context, then surface that error the way net/http does.
+			<-req.Context().Done()
+			return nil, req.Context().Err()
+		}),
+	}
+
+	_, err := etherScan.BlockNumber(context.Background())
+	require.Error(t, err)
 }
 
 func TestGweiStringToWei(t *testing.T) {
