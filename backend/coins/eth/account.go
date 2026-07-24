@@ -5,6 +5,7 @@ package eth
 import (
 	"context"
 	"encoding/hex"
+	stderrors "errors"
 	"fmt"
 	"math/big"
 	"net/http"
@@ -267,17 +268,24 @@ func (account *Account) updateOutgoingTransactions(tipHeight uint64) {
 		}
 		txLog := account.log.WithField("idx", idx)
 		remoteTx, err := account.coin.client.TransactionReceiptWithBlockNumber(context.TODO(), tx.Transaction.Hash())
-		if remoteTx == nil || err != nil {
-			// Transaction not found. This usually happens for pending transactions.
-			// In this case, check if the node actually knows about the transaction, and if not, re-broadcast.
-			// We do this because it seems that sometimes, a transaction that was broadcast without error still ends up lost.
-			_, _, err := account.coin.client.TransactionByHash(context.TODO(), tx.Transaction.Hash())
-			if err != nil {
+		switch {
+		case stderrors.Is(err, ethereum.NotFound):
+			// No receipt yet: this usually happens for pending transactions. Check whether the node
+			// knows about the transaction at all, and if it affirmatively does not, re-broadcast (a
+			// transaction that was broadcast without error can still end up lost).
+			_, _, txErr := account.coin.client.TransactionByHash(context.TODO(), tx.Transaction.Hash())
+			if txErr != nil && !stderrors.Is(txErr, ethereum.NotFound) {
+				// Inconclusive (transport/proxy error): do not rebroadcast a possibly-confirmed tx
+				// just because a lookup failed transiently. Retry next poll.
+				txLog.WithError(txErr).Error("could not fetch transaction")
+				continue
+			}
+			if stderrors.Is(txErr, ethereum.NotFound) {
 				tx.BroadcastAttempts++
-				txLog.WithError(err).Errorf("could not fetch transaction - rebroadcasting, attempt %d", tx.BroadcastAttempts)
+				txLog.Errorf("transaction unknown to node - rebroadcasting, attempt %d", tx.BroadcastAttempts)
 				if err := dbTx.PutOutgoingTransaction(tx); err != nil {
 					txLog.WithError(err).Error("could not update outgoing tx")
-					// Do not abort here, we want to attempt broadcastng the tx in any case.
+					// Do not abort here, we want to attempt broadcasting the tx in any case.
 				}
 				if err := account.coin.client.SendTransaction(context.TODO(), tx.Transaction); err != nil {
 					txLog.WithError(err).Error("failed to broadcast")
@@ -285,6 +293,11 @@ func (account *Account) updateOutgoingTransactions(tipHeight uint64) {
 				}
 				txLog.Info("Broadcasting did not return an error")
 			}
+			continue
+		case err != nil:
+			// Transport/proxy error fetching the receipt: skip this tx this cycle and retry next
+			// poll rather than treating it as "not found" and escalating.
+			txLog.WithError(err).Error("could not fetch receipt")
 			continue
 		}
 		success := remoteTx.Status == types.ReceiptStatusSuccessful

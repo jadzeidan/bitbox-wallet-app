@@ -269,6 +269,36 @@ func TestBlockNumberUsesEthBlockNumber(t *testing.T) {
 	require.Equal(t, int64(0x1234), blockNumber.Int64())
 }
 
+func TestTransactionLookupsReturnNotFound(t *testing.T) {
+	nullResult := func(req *http.Request) *http.Response {
+		return jsonRPCResponse(t, `{"jsonrpc":"2.0","id":1,"result":null}`)
+	}
+
+	t.Run("receipt", func(t *testing.T) {
+		etherScan := newTestEtherScan(nullResult)
+		_, err := etherScan.TransactionReceiptWithBlockNumber(context.Background(), common.Hash{})
+		require.ErrorIs(t, err, ethereum.NotFound)
+	})
+	t.Run("byHash", func(t *testing.T) {
+		etherScan := newTestEtherScan(nullResult)
+		_, _, err := etherScan.TransactionByHash(context.Background(), common.Hash{})
+		require.ErrorIs(t, err, ethereum.NotFound)
+	})
+}
+
+func TestTransactionReceiptTransportErrorIsNotNotFound(t *testing.T) {
+	etherScan := newTestEtherScan(func(req *http.Request) *http.Response {
+		return &http.Response{
+			StatusCode: http.StatusBadGateway,
+			Body:       io.NopCloser(bytes.NewReader(nil)),
+			Header:     make(http.Header),
+		}
+	})
+	_, err := etherScan.TransactionReceiptWithBlockNumber(context.Background(), common.Hash{})
+	require.Error(t, err)
+	require.NotErrorIs(t, err, ethereum.NotFound)
+}
+
 func TestTokenTransactionsByContractPaginationDedup(t *testing.T) {
 	// Arrange: construct deterministic addresses and a duplicate tx hash.
 	address := common.HexToAddress("0x0000000000000000000000000000000000000001")

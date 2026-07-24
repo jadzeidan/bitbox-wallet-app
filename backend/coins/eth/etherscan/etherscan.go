@@ -514,7 +514,10 @@ func (etherScan *EtherScan) TokenTransactionsByContract(
 
 // ----- RPC node proxy methods follow
 
-func (etherScan *EtherScan) rpcCall(ctx context.Context, params url.Values, result interface{}) error {
+// rpcCallRaw performs a module=proxy JSON-RPC call and returns the raw result message. It surfaces
+// JSON-RPC and transport errors. A `{"result": null}` response yields a nil message with no error,
+// which callers interpret as "not found".
+func (etherScan *EtherScan) rpcCallRaw(ctx context.Context, params url.Values) (*json.RawMessage, error) {
 	params.Set("module", "proxy")
 
 	var wrapped struct {
@@ -530,45 +533,81 @@ func (etherScan *EtherScan) rpcCall(ctx context.Context, params url.Values, resu
 		method = http.MethodPost
 	}
 	if err := etherScan.callWithMethod(ctx, method, params, &wrapped); err != nil {
-		return err
+		return nil, err
 	}
 	if wrapped.Error != nil {
-		return errp.New(wrapped.Error.Message)
+		return nil, errp.New(wrapped.Error.Message)
+	}
+	return wrapped.Result, nil
+}
+
+func (etherScan *EtherScan) rpcCall(ctx context.Context, params url.Values, result interface{}) error {
+	raw, err := etherScan.rpcCallRaw(ctx, params)
+	if err != nil {
+		return err
 	}
 	if result == nil {
 		return nil
 	}
-	if wrapped.Result == nil {
+	if raw == nil {
 		return errp.New("expected result")
 	}
-	if err := json.Unmarshal(*wrapped.Result, result); err != nil {
-		return errp.Newf("unexpected response from EtherScan: %s", string(*wrapped.Result))
+	if err := json.Unmarshal(*raw, result); err != nil {
+		return errp.Newf("unexpected response from EtherScan: %s", string(*raw))
 	}
 	return nil
 }
 
-// TransactionReceiptWithBlockNumber implements rpc.Interface.
+// rpcCallNullable behaves like rpcCall but treats a JSON-RPC null result ({"result": null}) as a
+// meaningful "not found" (found=false, err=nil) rather than an error. Used by the lookups whose
+// null result means the node does not know the transaction, so a transient transport error can be
+// told apart from an authoritative absence.
+func (etherScan *EtherScan) rpcCallNullable(ctx context.Context, params url.Values, result interface{}) (found bool, err error) {
+	raw, err := etherScan.rpcCallRaw(ctx, params)
+	if err != nil {
+		return false, err
+	}
+	if raw == nil {
+		return false, nil
+	}
+	if err := json.Unmarshal(*raw, result); err != nil {
+		return false, errp.Newf("unexpected response from EtherScan: %s", string(*raw))
+	}
+	return true, nil
+}
+
+// TransactionReceiptWithBlockNumber implements rpc.Interface. It returns ethereum.NotFound if the
+// node has no receipt for the hash (e.g. a still-pending or dropped tx).
 func (etherScan *EtherScan) TransactionReceiptWithBlockNumber(
 	ctx context.Context, hash common.Hash) (*rpcclient.RPCTransactionReceipt, error) {
 	params := url.Values{}
 	params.Set("action", "eth_getTransactionReceipt")
 	params.Set("txhash", hash.Hex())
 	var result *rpcclient.RPCTransactionReceipt
-	if err := etherScan.rpcCall(ctx, params, &result); err != nil {
+	found, err := etherScan.rpcCallNullable(ctx, params, &result)
+	if err != nil {
 		return nil, err
+	}
+	if !found {
+		return nil, ethereum.NotFound
 	}
 	return result, nil
 }
 
-// TransactionByHash implements rpc.Interface.
+// TransactionByHash implements rpc.Interface. It returns ethereum.NotFound if the node does not
+// know the transaction at all.
 func (etherScan *EtherScan) TransactionByHash(
 	ctx context.Context, hash common.Hash) (*types.Transaction, bool, error) {
 	params := url.Values{}
 	params.Set("action", "eth_getTransactionByHash")
 	params.Set("txhash", hash.Hex())
 	var result rpcclient.RPCTransaction
-	if err := etherScan.rpcCall(ctx, params, &result); err != nil {
+	found, err := etherScan.rpcCallNullable(ctx, params, &result)
+	if err != nil {
 		return nil, false, err
+	}
+	if !found {
+		return nil, false, ethereum.NotFound
 	}
 	return &result.Transaction, result.BlockNumber == nil, nil
 }
