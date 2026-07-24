@@ -1075,6 +1075,13 @@ func (account *Account) EthSignWalletConnectTx(
 		if err := account.coin.client.SendTransaction(context.TODO(), signedTx); err != nil {
 			return "", "", errp.WithStack(err)
 		}
+		// Mirror SendTx: persist the pending tx so it is tracked like any other outgoing tx (nonce
+		// fallback, rebroadcast if lost) and refresh the account so the new balance/tx shows without
+		// waiting for the 5-minute poll.
+		if err := account.storePendingOutgoingTransaction(signedTx); err != nil {
+			return "", "", err
+		}
+		account.EnqueueUpdate()
 	}
 	rawTx, err := rlp.EncodeToBytes(signedTx)
 	if err != nil {
