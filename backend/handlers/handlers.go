@@ -458,6 +458,8 @@ type accountBaseJSON struct {
 	Name              string              `json:"name"`
 	ReceiveScriptType *signing.ScriptType `json:"receiveScriptType,omitempty"`
 	IsToken           bool                `json:"isToken"`
+	// IsVault is true for vault accounts, which need several keystores to spend.
+	IsVault bool `json:"isVault"`
 }
 
 type accountJSON struct {
@@ -514,6 +516,7 @@ func newAccountBaseJSON(
 		Name:              accountConfig.Name,
 		ReceiveScriptType: accountConfig.ReceiveScriptType,
 		IsToken:           isTokenAccount(accountCoin),
+		IsVault:           accountConfig.IsMultisig(),
 	}
 }
 
