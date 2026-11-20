@@ -3,7 +3,7 @@
 import '../../../../__mocks__/i18n';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import * as accountApi from '@/api/account';
 import { statusChanged, syncdone } from '@/api/accountsync';
 import { AppStateContext } from '@/contexts/app-state-context';
@@ -29,10 +29,18 @@ vi.mock('@/components/banners/offline-error', () => ({
 vi.mock('./chart', () => ({ Chart: () => null }));
 vi.mock('./total-balance-for-all-keystores', () => ({ TotalBalanceForAllKeystores: () => null }));
 vi.mock('./keystorebalance', () => ({
-  KeystoreBalance: ({ accounts, balances }: { accounts: accountApi.TAccount[]; balances?: Balances }) => (
-    <div>
+  KeystoreBalance: ({ accounts, balances, keystore, title, keystoreBalance }: {
+    accounts: accountApi.TAccount[];
+    balances?: Balances;
+    keystore?: accountApi.TKeystore;
+    title?: string;
+    keystoreBalance?: accountApi.TKeystoreBalance;
+  }) => (
+    <div data-testid={`section-${title ?? keystore?.name ?? ''}`} data-total={keystoreBalance?.total}>
       {accounts.map(account => (
-        <output key={account.code}>{balances?.[account.code]?.available.amount} BTC</output>
+        <output key={account.code} data-testid={`account-${account.code}`}>
+          {balances?.[account.code]?.available.amount} BTC
+        </output>
       ))}
     </div>
   ),
@@ -209,5 +217,36 @@ describe('AccountsSummary', () => {
     act(() => vi.mocked(syncdone).mock.calls[1]![1]());
     expect(await screen.findByText('4 BTC')).toBeInTheDocument();
     expect(accountApi.getStatus).toHaveBeenCalledWith('next-account');
+  });
+
+  // Vault accounts are listed in their own section with their own total, separate from the
+  // accounts of the keystore they are presented under.
+  it('lists vault accounts in their own section', async () => {
+    const vaultAccount: accountApi.TAccount = { ...account, code: 'vault', name: 'My vault', isVault: true };
+    vi.mocked(accountApi.getAccountsBalanceSummary).mockResolvedValue({
+      success: true,
+      accountsBalanceSummary: {
+        keystoresBalance: { [account.keystore.rootFingerprint]: { fiatUnit: 'USD', total: '10.00' } },
+        vaultsBalance: { fiatUnit: 'USD', total: '20.00' },
+        coinsTotalBalance: [],
+      },
+    });
+    render(summaryWithAccounts([account, vaultAccount]));
+
+    const keystoreSection = await screen.findByTestId('section-BitBox02');
+    const vaultsSection = screen.getByTestId('section-vault.sectionTitle');
+    expect(within(keystoreSection).getByTestId('account-account')).toBeInTheDocument();
+    expect(within(keystoreSection).queryByTestId('account-vault')).toBeNull();
+    expect(within(vaultsSection).getByTestId('account-vault')).toBeInTheDocument();
+    expect(within(vaultsSection).queryByTestId('account-account')).toBeNull();
+    await waitFor(() => expect(vaultsSection).toHaveAttribute('data-total', '20.00'));
+    expect(keystoreSection).toHaveAttribute('data-total', '10.00');
+  });
+
+  // Without vault accounts there is no vaults section.
+  it('shows no vaults section without vault accounts', async () => {
+    render(summaryWithAccounts([account]));
+    await screen.findByTestId('section-BitBox02');
+    expect(screen.queryByTestId('section-vault.sectionTitle')).toBeNull();
   });
 });

@@ -16,15 +16,23 @@ import style from './accountssummary.module.css';
 
 type TProps = {
   accounts: accountApi.TAccount[];
-  accountsByKeystore: TAccountsByKeystore[];
-  keystore: TKeystore;
   keystoreBalance?: accountApi.TKeystoreBalance;
   balances?: Balances;
   showUnitPrice?: boolean;
-};
+} & ({
+  // The accounts of a keystore, shown under the name of the keystore.
+  accountsByKeystore: TAccountsByKeystore[];
+  keystore: TKeystore;
+  title?: never;
+} | {
+  // Accounts that are not owned by a single keystore, shown under a title.
+  accountsByKeystore?: never;
+  keystore?: never;
+  title: string;
+});
 
 
-export const KeystoreBalance = ({ accounts, accountsByKeystore, keystore, keystoreBalance, balances, showUnitPrice }: TProps) => {
+export const KeystoreBalance = ({ accounts, accountsByKeystore, keystore, title, keystoreBalance, balances, showUnitPrice }: TProps) => {
   const { t } = useTranslation();
   const [, navigate] = useLocation();
 
@@ -33,13 +41,15 @@ export const KeystoreBalance = ({ accounts, accountsByKeystore, keystore, keysto
 
   return (
     <BalanceSection
-      name={
+      name={keystore !== undefined ? (
         <ConnectedKeystore
           className={style.keystoreName}
           accountsByKeystore={accountsByKeystore}
           keystore={keystore}
         />
-      }
+      ) : (
+        <span className={style.keystoreName}>{title}</span>
+      )}
       totalAmount={keystoreBalance?.total}
       fiatUnit={keystoreBalance?.fiatUnit}
     >

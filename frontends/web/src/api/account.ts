@@ -109,6 +109,9 @@ export type TKeystoresBalance = {
 
 export type TAccountsBalanceSummary = {
   keystoresBalance: TKeystoresBalance;
+  // Total balance of the vault accounts, which are not part of keystoresBalance. Absent if there
+  // are no vault accounts.
+  vaultsBalance?: TKeystoreBalance;
   coinsTotalBalance: CoinFormattedAmount[];
 };
 

@@ -21,7 +21,7 @@ import { Entry } from '@/components/guide/entry';
 import { Guide } from '@/components/guide/guide';
 import { HideAmountsButton } from '@/components/hideamountsbutton/hideamountsbutton';
 import { AppContext } from '@/contexts/AppContext';
-import { getAccountsByKeystore, getAccountsPerCoin } from '@/routes/account/utils';
+import { getAccountsByKeystore, getAccountsPerCoin, splitVaultAccounts } from '@/routes/account/utils';
 import { isBitcoinOnly } from '@/utils/coin';
 import { RatesContext } from '@/contexts/RatesContext';
 import { ContentWrapper } from '@/components/contentwrapper/contentwrapper';
@@ -51,7 +51,10 @@ export const AccountsSummary = () => {
   const { defaultCurrency } = useContext(RatesContext);
   const { lightningAccount, lightningSDKStatus } = useLightning();
 
-  const accountsByKeystore = getAccountsByKeystore(activeAccounts);
+  // Vaults are not owned by a single keystore and are listed in their own section.
+  const { regularAccounts, vaultAccounts } = splitVaultAccounts(activeAccounts);
+  const accountsByKeystore = getAccountsByKeystore(regularAccounts);
+  const numSections = accountsByKeystore.length + (vaultAccounts.length > 0 ? 1 : 0);
   const hasActiveBitcoinAccount = activeAccounts.some(account => account.active && isBitcoinOnly(account.coinCode));
   const hasOnlyLightningAccount = !!lightningAccount && !hasAccounts;
 
@@ -61,8 +64,8 @@ export const AccountsSummary = () => {
   );
   const showTotalBalance = (
     lightningAccount !== null
-    || accountsByKeystore.length > 1
-    || (accountsByKeystore.length > 0 && hasMultipleAccountsPerCoin)
+    || numSections > 1
+    || (numSections > 0 && hasMultipleAccountsPerCoin)
   );
 
   const [chartData, setChartData] = useState<accountApi.TChartData>();
@@ -314,6 +317,16 @@ export const AccountsSummary = () => {
                   />
                 )
               ))}
+              {vaultAccounts.length > 0 && (
+                <KeystoreBalance
+                  key="vaults"
+                  accounts={vaultAccounts}
+                  title={t('vault.sectionTitle')}
+                  keystoreBalance={accountsBalanceSummary?.vaultsBalance}
+                  balances={balances}
+                  showUnitPrice={!showTotalBalance}
+                />
+              )}
             </div>
 
           </View>
