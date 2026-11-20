@@ -582,6 +582,10 @@ func txProposalError(err error) txProposalResponse {
 	if validationErr, ok := errp.Cause(err).(errors.TxValidationError); ok {
 		return txProposalResponse{Success: false, ErrorCode: validationErr.Error()}
 	}
+	switch cause := errp.Cause(err); cause {
+	case btc.ErrMultisigTxPending, btc.ErrMultisigSpendUnsupported:
+		return txProposalResponse{Success: false, ErrorCode: cause.Error()}
+	}
 	return txProposalResponse{Success: false, ErrorMessage: errp.WithMessage(err, "Failed to create transaction proposal").Error()}
 }
 

@@ -134,14 +134,33 @@ func (account *Account) pickChangeAddress(utxos map[wire.OutPoint]maketx.UTXO) (
 func (account *Account) newTx(args *accounts.TxProposalArgs) (
 	map[wire.OutPoint]*transactions.SpendableOutput, *maketx.TxProposal, error) {
 
-	if account.Config().SigningConfigurations.Multisig() != nil {
-		return nil, nil, errp.WithStack(ErrMultisigSpendUnsupported)
+	isMultisig := account.multisig() != nil
+	if isMultisig {
+		if args.PaymentRequest != nil {
+			return nil, nil, errp.WithStack(ErrMultisigSpendUnsupported)
+		}
+		// The inputs of the pending transaction are not available for another transaction.
+		pending, err := func() (*pendingMultisigTx, error) {
+			defer account.multisigTxLock.Lock()()
+			return account.loadPendingMultisigTx()
+		}()
+		if err != nil {
+			return nil, nil, err
+		}
+		if pending != nil {
+			return nil, nil, errp.WithStack(ErrMultisigTxPending)
+		}
 	}
 
 	account.log.Debug("Prepare new transaction")
 
 	var outputInfo *maketx.OutputInfo
 	if err := account.coin.ValidateSilentPaymentAddress(args.RecipientAddress); err == nil {
+		if isMultisig {
+			// A silent payment output is derived from the keys of the inputs, which is not defined
+			// for multisig inputs.
+			return nil, nil, errp.WithStack(errors.ErrInvalidAddress)
+		}
 		outputInfo = maketx.NewOutputInfoSilentPayment(args.RecipientAddress)
 	} else {
 		pkScript, err := account.coin.AddressToPkScript(args.RecipientAddress)
@@ -250,7 +269,8 @@ func (account *Account) SendTx(txNote string) (string, error) {
 	if txProposal == nil {
 		return "", errp.New("No active tx proposal")
 	}
-	if account.Config().SigningConfigurations.Multisig() != nil {
+	if account.multisig() != nil {
+		// A multisig transaction needs several signatures, see CreatePendingMultisigTx().
 		return "", errp.WithStack(ErrMultisigSpendUnsupported)
 	}
 

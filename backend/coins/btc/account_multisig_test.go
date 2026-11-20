@@ -9,13 +9,16 @@ import (
 	"time"
 
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/accounts"
+	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/accounts/errors"
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/coins/btc/addresses"
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/coins/btc/blockchain"
 	blockchainMock "github.com/BitBoxSwiss/bitbox-wallet-app/backend/coins/btc/blockchain/mocks"
+	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/coins/btc/maketx"
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/coins/btc/types"
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/coins/coin"
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/keystore"
 	keystoremock "github.com/BitBoxSwiss/bitbox-wallet-app/backend/keystore/mocks"
+	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/paymentrequest"
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/signing"
 	"github.com/BitBoxSwiss/bitbox-wallet-app/util/errp"
 	"github.com/BitBoxSwiss/bitbox-wallet-app/util/logging"
@@ -151,14 +154,29 @@ func TestMultisigAccountVerifyAddress(t *testing.T) {
 	require.Equal(t, types.Derivation{Change: false, AddressIndex: 3}, calls[0].Derivation)
 }
 
-// Spending from a multisig account and signing messages with its addresses are rejected with
-// dedicated error codes.
+// A multisig account can't be spent from in one step, pay to silent payment addresses or pay
+// payment requests, and its addresses can't sign messages. Each is rejected with an error code.
 func TestMultisigAccountUnsupportedOperations(t *testing.T) {
 	account, _ := mockMultisigAccount(t, &keystoremock.KeystoreMock{
 		CanSignMessageFunc: func(coin.Code) bool { return true },
 	})
 
-	_, _, _, err := account.TxProposal(&accounts.TxProposalArgs{})
+	// Sending needs the signatures of several keystores, see CreatePendingMultisigTx().
+	_, err := account.SendTx("")
+	require.Error(t, err)
+	account.activeTxProposal = &maketx.TxProposal{}
+	_, err = account.SendTx("")
+	require.Equal(t, ErrMultisigSpendUnsupported, errp.Cause(err))
+
+	_, _, _, err = account.TxProposal(&accounts.TxProposalArgs{
+		RecipientAddress: "tsp1qqgste7k9hx0qftg6qmwlkqtwuy6cycyavzmzj85c6qdfhjdpdjtdgqjuexzk6murw56suy3e0rd2cgqvycxttddwsvgxe2usfpxumr70xc9pkqwv",
+	})
+	require.Equal(t, errors.ErrInvalidAddress, errp.Cause(err))
+
+	_, _, _, err = account.TxProposal(&accounts.TxProposalArgs{
+		RecipientAddress: "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx",
+		PaymentRequest:   &paymentrequest.Request{},
+	})
 	require.Equal(t, ErrMultisigSpendUnsupported, errp.Cause(err))
 
 	addressLists, err := account.GetUnusedReceiveAddresses()

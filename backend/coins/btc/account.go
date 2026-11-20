@@ -55,7 +55,8 @@ const (
 	// ErrMultisigNotRegistered is returned when a multisig account is used with a keystore on which
 	// it has not been registered yet.
 	ErrMultisigNotRegistered errp.ErrorCode = "multisigNotRegistered"
-	// ErrMultisigSpendUnsupported is returned when attempting to spend from a multisig account.
+	// ErrMultisigSpendUnsupported is returned when attempting to spend from a multisig account in
+	// a way that is not available for multisig accounts.
 	ErrMultisigSpendUnsupported errp.ErrorCode = "multisigSpendUnsupported"
 	// ErrMultisigSignMessageUnsupported is returned when attempting to sign a message with an
 	// address of a multisig account.
@@ -114,6 +115,9 @@ type Account struct {
 	// if not nil, SendTx() will sign and send this transaction. Set by TxProposal().
 	activeTxProposal     *maketx.TxProposal
 	activeTxProposalLock locker.Locker
+
+	// multisigTxLock guards the pending transaction of a multisig account.
+	multisigTxLock locker.Locker
 
 	// Access this only via getMinRelayFeeRate(). sat/kB.
 	minRelayFeeRate     *btcutil.Amount
