@@ -195,3 +195,70 @@ func TestSignETHMessage(t *testing.T) {
 		crypto.FromECDSAPub(recoveredPub),
 	)
 }
+
+// The software keystore holds keys of Bitcoin multisig accounts, so that these can be exercised
+// without a hardware wallet. An account is unregistered until it is registered, and a keystore
+// that holds none of the keys can't register it.
+func TestBTCMultisig(t *testing.T) {
+	ks := makeKeystore(t)
+	btcCoin := btc.NewCoin(
+		coin.CodeTBTC, "Bitcoin Testnet", "TBTC", coin.BtcUnitDefault,
+		&chaincfg.TestNet3Params, ".", nil, "", "", socksproxy.NewSocksProxy(false, ""))
+	ltcCoin := btc.NewCoin(
+		coin.CodeTLTC, "Litecoin Testnet", "TLTC", coin.BtcUnitDefault,
+		&chaincfg.TestNet3Params, ".", nil, "", "", socksproxy.NewSocksProxy(false, ""))
+	require.True(t, ks.SupportsAccount(btcCoin, signing.ScriptTypeP2WSH))
+	require.False(t, ks.SupportsAccount(ltcCoin, signing.ScriptTypeP2WSH))
+
+	keypath, err := signing.NewAbsoluteKeypath("m/48'/1'/0'/2'")
+	require.NoError(t, err)
+	ourXpub, err := ks.ExtendedPublicKey(btcCoin, keypath)
+	require.NoError(t, err)
+	rootFingerprint, err := ks.RootFingerprint()
+	require.NoError(t, err)
+	foreignKey := func(seed byte, fingerprint []byte) signing.KeyInfo {
+		seedBytes := make([]byte, 32)
+		seedBytes[0] = seed
+		master, err := hdkeychain.NewMaster(seedBytes, &chaincfg.MainNetParams)
+		require.NoError(t, err)
+		xpub, err := master.Neuter()
+		require.NoError(t, err)
+		return signing.KeyInfo{
+			RootFingerprint:   fingerprint,
+			AbsoluteKeypath:   keypath,
+			ExtendedPublicKey: xpub,
+		}
+	}
+	ourKey := signing.KeyInfo{
+		RootFingerprint:   rootFingerprint,
+		AbsoluteKeypath:   keypath,
+		ExtendedPublicKey: ourXpub,
+	}
+	key2 := foreignKey(2, []byte{2, 2, 2, 2})
+	key3 := foreignKey(3, []byte{3, 3, 3, 3})
+
+	configuration, err := signing.NewBitcoinMultisigConfiguration(
+		2, []signing.KeyInfo{ourKey, key2, key3})
+	require.NoError(t, err)
+	registered, err := ks.BTCMultisigRegistered(btcCoin, configuration.BitcoinMultisig)
+	require.NoError(t, err)
+	require.False(t, registered)
+	require.NoError(t, ks.RegisterBTCMultisig(btcCoin, configuration.BitcoinMultisig, "name"))
+	registered, err = ks.BTCMultisigRegistered(btcCoin, configuration.BitcoinMultisig)
+	require.NoError(t, err)
+	require.True(t, registered)
+
+	// The registration does not depend on the order of the keys.
+	reordered, err := signing.NewBitcoinMultisigConfiguration(
+		2, []signing.KeyInfo{key3, ourKey, key2})
+	require.NoError(t, err)
+	registered, err = ks.BTCMultisigRegistered(btcCoin, reordered.BitcoinMultisig)
+	require.NoError(t, err)
+	require.True(t, registered)
+
+	foreign, err := signing.NewBitcoinMultisigConfiguration(2, []signing.KeyInfo{key2, key3})
+	require.NoError(t, err)
+	_, err = ks.BTCMultisigRegistered(btcCoin, foreign.BitcoinMultisig)
+	require.Error(t, err)
+	require.Error(t, ks.RegisterBTCMultisig(btcCoin, foreign.BitcoinMultisig, "name"))
+}

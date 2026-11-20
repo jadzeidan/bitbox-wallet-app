@@ -8,6 +8,9 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"sort"
+	"strings"
+	"sync"
 
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/coins/btc"
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/coins/btc/types"
@@ -42,6 +45,11 @@ type Keystore struct {
 	identifier string
 	edition    Edition
 	log        *logrus.Entry
+
+	// registeredMultisigs holds the multisig accounts registered on this keystore. Registrations
+	// are not persisted: they are lost when the keystore is disconnected.
+	registeredMultisigs     map[string]struct{}
+	registeredMultisigsLock sync.Mutex
 }
 
 // Edition models the coin set supported by the software keystore.
@@ -156,6 +164,10 @@ func (keystore *Keystore) SupportsAccount(coin coinpkg.Coin, meta interface{}) b
 	switch coin.(type) {
 	case *btc.Coin:
 		scriptType := meta.(signing.ScriptType)
+		if scriptType == signing.ScriptTypeP2WSH {
+			// Multisig accounts are only offered for Bitcoin.
+			return coinpkg.IsBitcoinOnly(coin.Code())
+		}
 		return scriptType == signing.ScriptTypeP2PKH ||
 			scriptType == signing.ScriptTypeP2WPKHP2SH ||
 			scriptType == signing.ScriptTypeP2WPKH ||
@@ -182,14 +194,55 @@ func (keystore *Keystore) VerifyAddressBTC(*signing.Configuration, types.Derivat
 	return errp.New("The software-based keystore has no secure output to display the address.")
 }
 
-// BTCMultisigRegistered implements keystore.Keystore.
-func (keystore *Keystore) BTCMultisigRegistered(coinpkg.Coin, *signing.BitcoinMultisig) (bool, error) {
-	return false, errp.WithStack(keystorePkg.ErrUnsupportedFeature)
+// multisigRegistrationKey identifies a multisig account by its threshold and keys, independently
+// of the order of the keys. An error is returned if this keystore does not hold one of the keys.
+func (keystore *Keystore) multisigRegistrationKey(multisig *signing.BitcoinMultisig) (string, error) {
+	if err := multisig.Validate(); err != nil {
+		return "", err
+	}
+	rootFingerprint, err := keystore.RootFingerprint()
+	if err != nil {
+		return "", err
+	}
+	if multisig.KeyIndex(rootFingerprint) == -1 {
+		return "", errp.New("the keystore does not hold a key of this multisig account")
+	}
+	xpubs := make([]string, len(multisig.Keys))
+	for index, key := range multisig.Keys {
+		xpubs[index] = key.ExtendedPublicKey.String()
+	}
+	sort.Strings(xpubs)
+	return fmt.Sprintf("%d:%s", multisig.Threshold, strings.Join(xpubs, ",")), nil
 }
 
-// RegisterBTCMultisig implements keystore.Keystore.
-func (keystore *Keystore) RegisterBTCMultisig(coinpkg.Coin, *signing.BitcoinMultisig, string) error {
-	return errp.WithStack(keystorePkg.ErrUnsupportedFeature)
+// BTCMultisigRegistered implements keystore.Keystore.
+func (keystore *Keystore) BTCMultisigRegistered(
+	_ coinpkg.Coin, multisig *signing.BitcoinMultisig) (bool, error) {
+	key, err := keystore.multisigRegistrationKey(multisig)
+	if err != nil {
+		return false, err
+	}
+	keystore.registeredMultisigsLock.Lock()
+	defer keystore.registeredMultisigsLock.Unlock()
+	_, registered := keystore.registeredMultisigs[key]
+	return registered, nil
+}
+
+// RegisterBTCMultisig implements keystore.Keystore. There is nothing to confirm for the user, the
+// account is registered right away.
+func (keystore *Keystore) RegisterBTCMultisig(
+	_ coinpkg.Coin, multisig *signing.BitcoinMultisig, _ string) error {
+	key, err := keystore.multisigRegistrationKey(multisig)
+	if err != nil {
+		return err
+	}
+	keystore.registeredMultisigsLock.Lock()
+	defer keystore.registeredMultisigsLock.Unlock()
+	if keystore.registeredMultisigs == nil {
+		keystore.registeredMultisigs = map[string]struct{}{}
+	}
+	keystore.registeredMultisigs[key] = struct{}{}
+	return nil
 }
 
 // VerifyAddressETH implements keystore.Keystore.
