@@ -127,6 +127,10 @@ type Backend interface {
 	FinishVaultSetup() (accountsTypes.Code, error)
 	DiscardVaultSetup() error
 	ExportVaultDescriptor(accountCode accountsTypes.Code) error
+	VaultPendingTx(accountCode accountsTypes.Code) (*backend.VaultTxInfo, error)
+	CreateVaultTx(accountCode accountsTypes.Code, note string) error
+	SignVaultTx(accountCode accountsTypes.Code) (string, error)
+	DiscardVaultTx(accountCode accountsTypes.Code) error
 	AOPP() backend.AOPP
 	AOPPCancel()
 	AOPPApprove()
@@ -264,6 +268,10 @@ func NewHandlers(
 	getAPIRouterNoError(apiRouter)("/vault/setup/register", handlers.postVaultSetupRegister).Methods("POST")
 	getAPIRouterNoError(apiRouter)("/vault/setup/finish", handlers.postVaultSetupFinish).Methods("POST")
 	getAPIRouterNoError(apiRouter)("/vault/setup/discard", handlers.postVaultSetupDiscard).Methods("POST")
+	getAPIRouterNoError(apiRouter)("/vault/pending-tx/create", handlers.postVaultTxCreate).Methods("POST")
+	getAPIRouterNoError(apiRouter)("/vault/pending-tx/sign", handlers.postVaultTxSign).Methods("POST")
+	getAPIRouterNoError(apiRouter)("/vault/pending-tx/discard", handlers.postVaultTxDiscard).Methods("POST")
+	getAPIRouterNoError(apiRouter)("/vault/pending-tx/{accountCode}", handlers.getVaultPendingTx).Methods("GET")
 	getAPIRouterNoError(apiRouter)("/keystores", handlers.getKeystores).Methods("GET")
 	getAPIRouterNoError(apiRouter)("/keystore/{rootFingerprint}/features", handlers.getKeystoreFeatures).Methods("GET")
 	getAPIRouterNoError(apiRouter)("/keystore-name", handlers.getKeystoreName).Methods("GET")
@@ -766,6 +774,9 @@ func (handlers *Handlers) postAddAccount(r *http.Request) interface{} {
 // vaultErrorCode returns the error code of an error returned by a vault operation, or an empty
 // string if the error has no code.
 func vaultErrorCode(err error) string {
+	if errp.Cause(err) == keystore.ErrSigningAborted {
+		return string(errp.ErrUserAbort)
+	}
 	switch cause := errp.Cause(err).(type) {
 	case errp.ErrorCode:
 		return string(cause)
@@ -947,6 +958,62 @@ func (handlers *Handlers) postVaultSetupFinish(*http.Request) interface{} {
 func (handlers *Handlers) postVaultSetupDiscard(*http.Request) interface{} {
 	if err := handlers.backend.DiscardVaultSetup(); err != nil {
 		return handlers.vaultErrorResponse(err, "Could not discard vault setup")
+	}
+	return vaultResponse{Success: true}
+}
+
+func (handlers *Handlers) getVaultPendingTx(r *http.Request) interface{} {
+	accountCode := accountsTypes.Code(mux.Vars(r)["accountCode"])
+	pendingTx, err := handlers.backend.VaultPendingTx(accountCode)
+	if err != nil {
+		handlers.log.WithError(err).Error("Could not load pending vault transaction")
+		return nil
+	}
+	return pendingTx
+}
+
+func (handlers *Handlers) postVaultTxCreate(r *http.Request) interface{} {
+	var jsonBody struct {
+		AccountCode accountsTypes.Code `json:"accountCode"`
+		Note        string             `json:"note"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&jsonBody); err != nil {
+		return vaultResponse{Success: false, ErrorMessage: err.Error()}
+	}
+	if err := handlers.backend.CreateVaultTx(jsonBody.AccountCode, jsonBody.Note); err != nil {
+		return handlers.vaultErrorResponse(err, "Could not create vault transaction")
+	}
+	return vaultResponse{Success: true}
+}
+
+func (handlers *Handlers) postVaultTxSign(r *http.Request) interface{} {
+	var jsonBody struct {
+		AccountCode accountsTypes.Code `json:"accountCode"`
+	}
+	type response struct {
+		Success bool `json:"success"`
+		// TxID is set once the transaction has enough signatures and was sent.
+		TxID string `json:"txId,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&jsonBody); err != nil {
+		return vaultResponse{Success: false, ErrorMessage: err.Error()}
+	}
+	txID, err := handlers.backend.SignVaultTx(jsonBody.AccountCode)
+	if err != nil {
+		return handlers.vaultErrorResponse(err, "Could not sign vault transaction")
+	}
+	return response{Success: true, TxID: txID}
+}
+
+func (handlers *Handlers) postVaultTxDiscard(r *http.Request) interface{} {
+	var jsonBody struct {
+		AccountCode accountsTypes.Code `json:"accountCode"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&jsonBody); err != nil {
+		return vaultResponse{Success: false, ErrorMessage: err.Error()}
+	}
+	if err := handlers.backend.DiscardVaultTx(jsonBody.AccountCode); err != nil {
+		return handlers.vaultErrorResponse(err, "Could not discard vault transaction")
 	}
 	return vaultResponse{Success: true}
 }

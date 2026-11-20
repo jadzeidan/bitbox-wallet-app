@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/accounts"
+	accountsMocks "github.com/BitBoxSwiss/bitbox-wallet-app/backend/accounts/mocks"
 	accountsTypes "github.com/BitBoxSwiss/bitbox-wallet-app/backend/accounts/types"
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/coins/btc"
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/coins/btc/addresses"
@@ -564,4 +565,129 @@ func TestAccountsBalanceSummaryVaults(t *testing.T) {
 		}
 	}
 	require.True(t, foundBitcoinTotal)
+}
+
+// vaultTxAccountFake is a mocked vault account with a pending transaction.
+type vaultTxAccountFake struct {
+	*accountsMocks.InterfaceMock
+	pending   *btc.PendingMultisigTxInfo
+	notes     []string
+	signCalls int
+	discarded bool
+}
+
+func (fake *vaultTxAccountFake) CreatePendingMultisigTx(txNote string) error {
+	fake.notes = append(fake.notes, txNote)
+	return nil
+}
+
+func (fake *vaultTxAccountFake) SignPendingMultisigTx() (string, error) {
+	fake.signCalls++
+	return "txid", nil
+}
+
+func (fake *vaultTxAccountFake) PendingMultisigTx() (*btc.PendingMultisigTxInfo, error) {
+	return fake.pending, nil
+}
+
+func (fake *vaultTxAccountFake) DiscardPendingMultisigTx() error {
+	fake.discarded = true
+	return nil
+}
+
+// The pending transaction of a vault is reported with formatted amounts and with every key of the
+// vault: which keystore holds it, whether that keystore signed, and whether the connected keystore
+// can sign next. Creating, signing and discarding are forwarded to the vault account, and are
+// refused for accounts that are not vaults.
+func TestVaultPendingTx(t *testing.T) {
+	setup := newVaultTestSetup(t)
+	b := setup.backend
+	var vaultAccount *vaultTxAccountFake
+	b.makeBtcAccount = func(config *accounts.AccountConfig, coin *btc.Coin, gapLimits *types.GapLimits, getAddress func(coinpkg.Code, blockchain.ScriptHashHex) (*addresses.AccountAddress, error), log *logrus.Entry) accounts.Interface {
+		accountMock := MockBtcAccount(t, config, coin, gapLimits, log)
+		if config.SigningConfigurations.Multisig() == nil {
+			return accountMock
+		}
+		vaultAccount = &vaultTxAccountFake{InterfaceMock: accountMock}
+		return vaultAccount
+	}
+	b.registerKeystore(setup.keystores[0])
+	accountCode, err := b.AddVault(setup.descriptor, "My vault", setup.keystores[0])
+	require.NoError(t, err)
+	require.NotNil(t, vaultAccount)
+
+	info, err := b.VaultPendingTx(accountCode)
+	require.NoError(t, err)
+	require.Nil(t, info)
+
+	// The second keystore signed earlier, the first one is connected now.
+	b.DeregisterKeystore()
+	b.registerKeystore(setup.keystores[1])
+	b.DeregisterKeystore()
+	b.registerKeystore(setup.keystores[0])
+	vaultAccount.pending = &btc.PendingMultisigTxInfo{
+		Recipients: []btc.MultisigTxRecipient{
+			{Address: "bc1qrecipient", Amount: coinpkg.NewAmountFromInt64(100000)},
+		},
+		Amount:    coinpkg.NewAmountFromInt64(100000),
+		Fee:       coinpkg.NewAmountFromInt64(500),
+		Total:     coinpkg.NewAmountFromInt64(100500),
+		Note:      "rent",
+		Threshold: 2,
+		SignedBy:  [][]byte{vaultFingerprint2},
+	}
+	info, err = b.VaultPendingTx(accountCode)
+	require.NoError(t, err)
+	require.Equal(t, "rent", info.Note)
+	require.Equal(t, 2, info.Threshold)
+	require.Equal(t, 1, info.NumSignatures)
+	require.True(t, info.CanSign)
+	require.False(t, info.CanBroadcast)
+	require.Equal(t, "0.00100000", info.Amount.Amount)
+	require.Equal(t, "0.00000500", info.Fee.Amount)
+	require.Equal(t, "0.00100500", info.Total.Amount)
+	require.Equal(t, "BTC", info.Total.Unit)
+	require.Len(t, info.Recipients, 1)
+	require.Equal(t, "bc1qrecipient", info.Recipients[0].Address)
+	require.Equal(t, "0.00100000", info.Recipients[0].Amount.Amount)
+	require.Equal(t, []VaultTxKey{
+		{RootFingerprint: vaultFingerprint1, KeystoreName: "BitBox A", Connected: true},
+		{RootFingerprint: vaultFingerprint2, KeystoreName: "BitBox B", Signed: true},
+		{RootFingerprint: vaultFingerprint3},
+	}, info.Keys)
+
+	// The connected keystore already signed: another one is needed.
+	vaultAccount.pending.SignedBy = [][]byte{vaultFingerprint1}
+	info, err = b.VaultPendingTx(accountCode)
+	require.NoError(t, err)
+	require.False(t, info.CanSign)
+
+	// Two signatures: the transaction only needs to be sent.
+	vaultAccount.pending.SignedBy = [][]byte{vaultFingerprint1, vaultFingerprint2}
+	info, err = b.VaultPendingTx(accountCode)
+	require.NoError(t, err)
+	require.False(t, info.CanSign)
+	require.True(t, info.CanBroadcast)
+
+	require.NoError(t, b.CreateVaultTx(accountCode, "note"))
+	require.Equal(t, []string{"note"}, vaultAccount.notes)
+	txID, err := b.SignVaultTx(accountCode)
+	require.NoError(t, err)
+	require.Equal(t, "txid", txID)
+	require.Equal(t, 1, vaultAccount.signCalls)
+	require.NoError(t, b.DiscardVaultTx(accountCode))
+	require.True(t, vaultAccount.discarded)
+
+	var regularAccountCode accountsTypes.Code
+	for _, view := range b.Accounts() {
+		if !view.Record.IsMultisig() {
+			regularAccountCode = view.Record.Code
+			break
+		}
+	}
+	_, err = b.VaultPendingTx(regularAccountCode)
+	require.Error(t, err)
+	require.Error(t, b.CreateVaultTx(regularAccountCode, ""))
+	_, err = b.SignVaultTx("unknown")
+	require.Error(t, err)
 }
