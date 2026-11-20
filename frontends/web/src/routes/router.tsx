@@ -4,6 +4,9 @@ import { Route, Switch } from 'wouter';
 import { useDevicesKey } from '@/hooks/device-key';
 import { Navigate, Routes, useLocation } from '@/utils/router-compatability';
 import { AddAccount } from './account/add/add-account';
+import { VaultCreate } from './account/add/vault/vault-create';
+import { VaultImport } from './account/add/vault/vault-import';
+import { VaultStart } from './account/add/vault/vault-start';
 import { Moonpay } from './market/moonpay';
 import { Market } from './market/market';
 import { MarketProvider } from './market/market-context';
@@ -114,6 +117,9 @@ export const AppRouter = () => {
         <Route path="/account/:code/wallet-connect/dashboard" component={DashboardWalletConnect}/>
 
         <Route path="/add-account" component={AddAccount}/>
+        <Route path="/add-account/vault" component={VaultStart}/>
+        <Route path="/add-account/vault/create" component={VaultCreate}/>
+        <Route path="/add-account/vault/import" component={VaultImport}/>
         <Route path="/account-summary" component={AccountsSummary}/>
         <Route path="/market/btcdirect/buy/:code">
           <BTCDirect action="buy"/>

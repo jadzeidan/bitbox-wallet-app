@@ -1,0 +1,122 @@
+.content {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-half);
+    text-align: left;
+}
+
+.title {
+    color: var(--color-default);
+    font-size: var(--size-large) !important;
+    font-weight: 400;
+}
+
+.description {
+    color: var(--color-secondary);
+    margin: 0;
+}
+
+.options {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-quarter);
+}
+
+.option {
+    align-items: center;
+    text-align: left;
+}
+
+.optionText {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.optionTitle {
+    color: var(--color-default);
+    font-weight: 500;
+}
+
+.optionDescription {
+    color: var(--color-secondary);
+    font-size: var(--size-small);
+}
+
+.keys {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-quarter);
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.key {
+    background-color: var(--background-secondary);
+    border-radius: 2px;
+    padding: var(--space-quarter) var(--space-half);
+}
+
+.keyEmpty {
+    border: 1px dashed var(--background-quaternary);
+    background-color: transparent;
+}
+
+.keyHeader {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-quarter);
+    justify-content: space-between;
+}
+
+.keyTitle {
+    color: var(--color-default);
+    font-weight: 500;
+}
+
+.keyName {
+    color: var(--color-secondary);
+    font-weight: 400;
+    margin-left: var(--space-quarter);
+}
+
+.keyBadges {
+    display: flex;
+    gap: var(--space-quarter);
+}
+
+.keyHint {
+    color: var(--color-secondary);
+    font-size: var(--size-small);
+}
+
+.keyXpub {
+    color: var(--color-secondary);
+    font-family: var(--font-family-monospace);
+    font-size: var(--size-small);
+    margin: var(--space-quarter) 0 0 0;
+    overflow-wrap: anywhere;
+    user-select: text;
+}
+
+.descriptor {
+    font-family: var(--font-family-monospace);
+    font-size: var(--size-small);
+    min-height: 120px;
+    overflow-wrap: anywhere;
+    padding: var(--space-quarter);
+    resize: vertical;
+    width: 100%;
+}
+
+.fileInput {
+    display: none;
+}
+
+.secondaryActions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-quarter);
+}

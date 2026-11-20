@@ -2699,6 +2699,109 @@
     "unlocked2": "The LED will light up when your BitBox is plugged back in",
     "unlocked3": "Tap the touch button when the LED lights up"
   },
+  "vault": {
+    "create": {
+      "backup": {
+        "acknowledge": "I have stored the vault file safely.",
+        "button": "Finish",
+        "description": "To recover your funds you need two of the three BitBox02s and this vault file. The backups of your BitBox02s do not contain it. Store a copy with each of them.",
+        "save": "Save vault file",
+        "title": "Back up the vault file"
+      },
+      "collectKeys": {
+        "addKey": "Use this BitBox02 as key {{number}}",
+        "connectAny": "Connect and unlock a BitBox02 to add its key.",
+        "connectNext": "Unplug this BitBox02, then connect and unlock the next one.",
+        "title": "Add three keys to {{name}}"
+      },
+      "discard": {
+        "button": "Discard setup",
+        "confirm": "Discard the setup of this vault?"
+      },
+      "name": {
+        "button": "Continue",
+        "hint": "Up to 30 characters, shown on your BitBox02s. The connected BitBox02 provides the first key.",
+        "label": "Vault name",
+        "title": "Name your vault"
+      },
+      "register": {
+        "button": "Register on this BitBox02",
+        "confirming": "Compare the vault name and the three keys on your BitBox02, then confirm.",
+        "connect": "Connect and unlock {{name}} to register the vault on it.",
+        "connectUnnamed": "Connect and unlock the next BitBox02 to register the vault on it.",
+        "description": "Each BitBox02 shows the vault name and the three keys below. Make sure they are the same on every device before you confirm.",
+        "title": "Register the vault on each BitBox02"
+      }
+    },
+    "details": {
+      "vaultFile": "Vault file. Together with two of the three BitBox02s, it is needed to recover the funds of this vault."
+    },
+    "error": {
+      "accountAlreadyExists": "This vault has already been added.",
+      "accountLimitReached": "This BitBox02 cannot be part of more vaults.",
+      "firmwareUpgradeRequired": "A firmware update is required to use vaults.",
+      "unsupportedFeature": "The connected device does not support vaults.",
+      "userAbort": "Cancelled on the BitBox02.",
+      "vaultDescriptorInvalid": "This is not a valid vault file.",
+      "vaultKeyMismatch": "The vault file does not match this BitBox02. If you use a passphrase, make sure you unlocked the right wallet.",
+      "vaultKeystoreAlreadyAdded": "This BitBox02 is already one of the keys. Connect a different one.",
+      "vaultKeystoreNotCosigner": "The connected BitBox02 is not one of the keys of this vault.",
+      "vaultNameInvalid": "Use 1 to 30 characters: letters without accents, digits, spaces and punctuation.",
+      "vaultSetupInProgress": "Another vault is already being set up.",
+      "vaultUnsupported": "Only vaults with two of three BitBox02 keys are supported."
+    },
+    "import": {
+      "continue": "Continue",
+      "description": "Paste the contents of the vault file or load the file. The connected BitBox02 must be one of the keys of the vault.",
+      "descriptor": {
+        "label": "Vault file contents",
+        "load": "Load vault file"
+      },
+      "review": {
+        "button": "Add vault",
+        "registerNote": "You will be asked to compare and confirm the vault name and the three keys on your BitBox02.",
+        "title": "Review vault"
+      },
+      "title": "Add existing vault"
+    },
+    "keys": {
+      "connected": "Connected",
+      "empty": "Not added yet",
+      "key": "Key {{number}}",
+      "notRegistered": "Not registered",
+      "registered": "Registered",
+      "threshold": "{{threshold}} of {{numKeys}} keys are needed to spend."
+    },
+    "prompt": {
+      "addKey": "Continue setting up {{name}}? This BitBox02 can be added as key {{number}}.",
+      "continue": "Continue",
+      "later": "Not now",
+      "register": "Continue setting up {{name}}? The vault can now be registered on this BitBox02.",
+      "title": "Vault setup"
+    },
+    "start": {
+      "create": {
+        "description": "You need three BitBox02s at hand.",
+        "title": "Create new vault"
+      },
+      "import": {
+        "description": "Use the vault file of a vault you already created.",
+        "title": "Add existing vault"
+      },
+      "resume": {
+        "description": "Pick up where you left off.",
+        "title": "Continue setting up {{name}}"
+      },
+      "title": "Set up a vault"
+    },
+    "success": {
+      "button": "Done",
+      "created": "Your vault is ready to receive bitcoin.",
+      "imported": "The vault has been added to your accounts.",
+      "title": "Vault added"
+    },
+    "title": "Add vault"
+  },
   "walletConnect": {
     "connect": {
       "button": "Connect",
