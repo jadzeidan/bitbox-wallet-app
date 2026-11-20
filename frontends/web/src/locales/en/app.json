@@ -70,6 +70,19 @@
       "step": "Select coin",
       "title": "Select cryptocurrency"
     },
+    "selectType": {
+      "regular": {
+        "description": "Signed by this BitBox02 alone.",
+        "title": "Regular account"
+      },
+      "step": "Account type",
+      "title": "Choose account type",
+      "vault": {
+        "description": "Two of three BitBox02s are needed to spend. Bitcoin only.",
+        "title": "Vault",
+        "unsupported": "Not available with the connected device."
+      }
+    },
     "success": {
       "addAnotherAccount": "Add another account",
       "message": "<strong>{{accountName}}</strong> has now been added to your accounts.",

@@ -6,6 +6,7 @@ import { useLocation } from 'wouter';
 import { TCoin, getSupportedCoins } from '@/api/backend';
 import { subscribeKeystores } from '@/api/keystores';
 import { addAccount, CoinCode, TAddAccount } from '@/api/account';
+import { getVaultSupported } from '@/api/vault';
 import { useAppState } from '@/contexts/app-state-context';
 import { SimpleMarkup } from '@/utils/markup';
 import { View, ViewButtons, ViewContent, ViewHeader } from '@/components/view/view';
@@ -14,6 +15,7 @@ import { Button, Input } from '@/components/forms';
 import { GuidedContent, GuideWrapper, Header, Main } from '@/components/layout';
 import { Step, Steps } from '@/components/steps/steps';
 import { CoinDropDown } from '@/components/dropdown/coin-dropdown';
+import { ActionableItem } from '@/components/actionable-item/actionable-item';
 import { SubTitle } from '@/components/title';
 import { useMediaQuery } from '@/hooks/mediaquery';
 import { UseBackButton } from '@/hooks/backbutton';
@@ -22,7 +24,7 @@ import { AddAccountGuide } from './add-account-guide';
 import { Skeleton } from '@/components/skeleton/skeleton';
 import styles from './add-account.module.css';
 
-type TStep = 'loading' | 'select-coin' | 'choose-name' | 'success';
+type TStep = 'loading' | 'select-type' | 'select-coin' | 'choose-name' | 'success';
 
 type TAddAccountContentProps = {
   accountName: string;
@@ -30,8 +32,11 @@ type TAddAccountContentProps = {
   handleBack: () => void;
   onAccountNameInput: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onCoinChange: (coin: TCoin) => void;
+  onSelectRegular: () => void;
+  onSelectVault: () => void;
   step: TStep;
   supportedCoins: TCoin[];
+  vaultSupported: boolean;
 };
 
 const AddAccountSteps = ({
@@ -40,8 +45,11 @@ const AddAccountSteps = ({
   handleBack,
   onAccountNameInput,
   onCoinChange,
+  onSelectRegular,
+  onSelectVault,
   step,
   supportedCoins,
+  vaultSupported,
 }: TAddAccountContentProps) => {
   const { t } = useTranslation();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -56,6 +64,36 @@ const AddAccountSteps = ({
   case 'loading':
     return (
       <Skeleton fontSize="4rem" />
+    );
+  case 'select-type':
+    return (
+      <div className={styles.accountTypes}>
+        <ActionableItem className={styles.accountType} onClick={onSelectRegular}>
+          <span className={styles.accountTypeText}>
+            <span className={styles.accountTypeTitle}>
+              {t('addAccount.selectType.regular.title')}
+            </span>
+            <span className={styles.accountTypeDescription}>
+              {t('addAccount.selectType.regular.description')}
+            </span>
+          </span>
+        </ActionableItem>
+        <ActionableItem
+          className={styles.accountType}
+          disabled={!vaultSupported}
+          onClick={onSelectVault}>
+          <span className={styles.accountTypeText}>
+            <span className={styles.accountTypeTitle}>
+              {t('addAccount.selectType.vault.title')}
+            </span>
+            <span className={styles.accountTypeDescription}>
+              {vaultSupported
+                ? t('addAccount.selectType.vault.description')
+                : t('addAccount.selectType.vault.unsupported')}
+            </span>
+          </span>
+        </ActionableItem>
+      </div>
     );
   case 'select-coin':
     if (supportedCoins.length === 0) {
@@ -106,6 +144,7 @@ export const AddAccount = () => {
   const [errorMessage, setErrorMessage] = useState<string>();
   const [step, setStep] = useState<TStep>('select-coin');
   const [supportedCoins, setSupportedCoins] = useState<TCoin[]>([]);
+  const [vaultSupported, setVaultSupported] = useState(false);
   const [adding, setAdding] = useState(false);
 
   const onlyOneSupportedCoin = (): boolean => {
@@ -115,8 +154,12 @@ export const AddAccount = () => {
   const startProcess = useCallback(async () => {
     try {
       setStep('loading');
-      const coins = await getSupportedCoins();
+      const [coins, isVaultSupported] = await Promise.all([
+        getSupportedCoins(),
+        getVaultSupported(),
+      ]);
       setSupportedCoins(coins);
+      setVaultSupported(isVaultSupported);
       const onlyOneCoinIsSupported = (coins.length === 1);
       const firstCoin = coins[0];
       if (!firstCoin) {
@@ -126,7 +169,7 @@ export const AddAccount = () => {
         return;
       }
       setCoinCode(onlyOneCoinIsSupported ? firstCoin.coinCode : 'choose');
-      setStep(onlyOneCoinIsSupported ? 'choose-name' : 'select-coin');
+      setStep('select-type');
       if (onlyOneCoinIsSupported) {
         setAccountName(firstCoin.suggestedAccountName);
       }
@@ -144,19 +187,26 @@ export const AddAccount = () => {
     return unsubscribe;
   }, [startProcess]);
 
+  const selectRegularAccount = () => {
+    setStep(onlyOneSupportedCoin() ? 'choose-name' : 'select-coin');
+  };
+
   const back = () => {
     switch (step) {
     case 'loading':
-    case 'select-coin':
+    case 'select-type':
       window.history.back();
       break;
-    case 'choose-name':
-      if (onlyOneSupportedCoin()) {
+    case 'select-coin':
+      if (supportedCoins.length === 0) {
         window.history.back();
       } else {
-        setStep('select-coin');
-        setErrorMessage(undefined);
+        setStep('select-type');
       }
+      break;
+    case 'choose-name':
+      setStep(onlyOneSupportedCoin() ? 'select-type' : 'select-coin');
+      setErrorMessage(undefined);
       break;
     case 'success':
       setStep('choose-name');
@@ -167,6 +217,9 @@ export const AddAccount = () => {
   const next = async (e: React.SyntheticEvent) => {
     e.preventDefault();
     switch (step) {
+    case 'select-type':
+      // The account type is chosen by selecting one of the options.
+      break;
     case 'select-coin':
       setStep('choose-name');
       break;
@@ -200,6 +253,11 @@ export const AddAccount = () => {
         titleText: t('loading'),
         nextButtonText: t('loading'),
       };
+    case 'select-type':
+      return {
+        titleText: t('addAccount.selectType.title'),
+        nextButtonText: '',
+      };
     case 'select-coin':
       return {
         titleText: t('addAccount.selectCoin.title'),
@@ -228,6 +286,7 @@ export const AddAccount = () => {
   };
 
   const currentStep = [
+    'select-type',
     ...(!onlyOneSupportedCoin() ? ['select-coin'] : []),
     'choose-name',
     'success'
@@ -277,11 +336,17 @@ export const AddAccount = () => {
                       setCoinCode(coin.coinCode);
                       setAccountName(coin.suggestedAccountName);
                     }}
+                    onSelectRegular={selectRegularAccount}
+                    onSelectVault={() => navigate('/add-account/vault')}
                     step={step}
-                    supportedCoins={supportedCoins} />
+                    supportedCoins={supportedCoins}
+                    vaultSupported={vaultSupported} />
                 </div>
                 {(step !== 'success' && step !== 'loading') && (
                   <Steps current={currentStep}>
+                    <Step key="select-type">
+                      {t('addAccount.selectType.step')}
+                    </Step>
                     <Step key="select-coin" hidden={onlyOneSupportedCoin()}>
                       {t('addAccount.selectCoin.step')}
                     </Step>
@@ -295,16 +360,18 @@ export const AddAccount = () => {
                 )}
               </ViewContent>
               <ViewButtons>
-                <Button
-                  disabled={
-                    step === 'loading'
-                    || (step === 'select-coin' && coinCode === 'choose')
-                    || (step === 'choose-name' && (accountName === '' || adding))
-                  }
-                  primary
-                  type="submit">
-                  {nextButtonText}
-                </Button>
+                {step !== 'select-type' && (
+                  <Button
+                    disabled={
+                      step === 'loading'
+                      || (step === 'select-coin' && coinCode === 'choose')
+                      || (step === 'choose-name' && (accountName === '' || adding))
+                    }
+                    primary
+                    type="submit">
+                    {nextButtonText}
+                  </Button>
+                )}
                 {step === 'success' ? (
                   <Button
                     onClick={handleAddAnotherAccount}

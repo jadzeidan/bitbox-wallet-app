@@ -20,6 +20,33 @@
     min-height: 90px;
 }
 
+.accountTypes {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-quarter);
+}
+
+.accountType {
+    align-items: center;
+    text-align: left;
+}
+
+.accountTypeText {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.accountTypeTitle {
+    color: var(--color-default);
+    font-weight: 500;
+}
+
+.accountTypeDescription {
+    color: var(--color-secondary);
+    font-size: var(--size-small);
+}
+
 .successMessage {
     color: var(--color-secondary);
 }

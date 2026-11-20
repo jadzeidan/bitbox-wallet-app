@@ -59,6 +59,7 @@ test('Send BTC', async ({ page, host, frontendPort, servewalletPort, browserName
     const addAccountButton = page.getByRole('button', { name: 'Add account' });
     await expect(addAccountButton).toBeVisible();
     await addAccountButton.click();
+    await page.getByRole('button', { name: 'Regular account' }).click();
     await addAccountButton.click();
     await expect(page.locator('body')).toContainText('Bitcoin Regtest 2 has now been added to your accounts.');
     await page.getByRole('button', { name: 'Done' }).click();
