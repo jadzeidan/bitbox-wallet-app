@@ -2758,6 +2758,10 @@
       "accountAlreadyExists": "This vault has already been added.",
       "accountLimitReached": "This BitBox02 cannot be part of more vaults.",
       "firmwareUpgradeRequired": "A firmware update is required to use vaults.",
+      "multisigAlreadySigned": "This BitBox02 has already signed. Connect another BitBox02 of this vault.",
+      "multisigNotRegistered": "The vault is not registered on this BitBox02.",
+      "multisigSpendUnsupported": "This is not available for vaults.",
+      "multisigTxPending": "This vault has a transaction waiting for its second signature. Sign or discard it first.",
       "unsupportedFeature": "The connected device does not support vaults.",
       "userAbort": "Cancelled on the BitBox02.",
       "vaultDescriptorInvalid": "This is not a valid vault file.",
@@ -2812,7 +2816,24 @@
       "imported": "The vault has been added to your accounts.",
       "title": "Vault added"
     },
-    "title": "Add vault"
+    "title": "Add vault",
+    "tx": {
+      "broadcast": "Send transaction",
+      "connectOther": "Connect and unlock another BitBox02 of this vault to add the second signature: {{names}}.",
+      "connectOtherUnnamed": "Connect and unlock another BitBox02 of this vault to add the second signature.",
+      "discard": "Discard",
+      "discardConfirm": "Discard this transaction? It has not been sent.",
+      "fee": "Fee",
+      "note": "Note",
+      "recipient": "To",
+      "sent": "The transaction was sent.",
+      "sign": "Sign with this BitBox02",
+      "signatures": "{{signed}} of {{threshold}} signatures",
+      "signed": "Signed",
+      "signing": "Check the transaction on your BitBox02 and confirm.",
+      "title": "Pending transaction",
+      "total": "Total"
+    }
   },
   "walletConnect": {
     "connect": {

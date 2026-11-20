@@ -20,6 +20,8 @@ import { useDebounce } from '@/hooks/debounce';
 import { useScrollIntoView } from '@/hooks/scroll-into-view';
 import { HideAmountsButton } from '@/components/hideamountsbutton/hideamountsbutton';
 import { ActionButtons } from './actionButtons';
+import { useVaultPendingTx } from './components/use-vault-pending-tx';
+import { VaultPendingTx } from './components/vault-pending-tx';
 import { Insured } from './components/insuredtag';
 import { AccountGuide } from './guide';
 import { BuyReceiveCTA } from './info/buy-receive-cta';
@@ -81,6 +83,7 @@ const RemountAccount = ({
   } = useAppState();
 
   const account = activeAccounts.find(acct => acct.code === code);
+  const { pendingTx: vaultPendingTx, reload: reloadVaultPendingTx } = useVaultPendingTx(code, !!account?.isVault);
 
   const isMobile = useMediaQuery('(max-width: 768px)');
   const { btcUnit } = useContext(RatesContext);
@@ -224,8 +227,8 @@ const RemountAccount = ({
     code,
     accountDataLoaded: hasDataLoaded,
     coinCode: account.coinCode,
-    // Spending from a vault is not available.
-    canSend: balance && balance.hasAvailable && !account.isVault,
+    // A vault can't start another transaction while one is waiting for its second signature.
+    canSend: balance && balance.hasAvailable && (!account.isVault || vaultPendingTx === null),
     exchangeSupported,
     account
   };
@@ -285,6 +288,12 @@ const RemountAccount = ({
                 <TransactionHistorySkeleton />
               ) : (
                 <div className={style.fadeIn}>
+                  {vaultPendingTx && (
+                    <VaultPendingTx
+                      accountCode={code}
+                      pendingTx={vaultPendingTx}
+                      onChange={reloadVaultPendingTx} />
+                  )}
                   <div className={style.accountHeader}>
                     {isAccountEmpty && (
                       <BuyReceiveCTA

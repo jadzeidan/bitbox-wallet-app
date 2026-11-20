@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import type { AccountCode } from './account';
+import type { AccountCode, TAmountWithConversions } from './account';
 import { subscribeEndpoint, TSubscriptionCallback, TUnsubscribe } from './subscribe';
 import { apiGet, apiPost } from '@/utils/request';
 
@@ -26,6 +26,11 @@ export type TVaultErrorCode =
   | 'accountAlreadyExists'
   | 'accountLimitReached'
   | 'firmwareUpgradeRequired'
+  | 'multisigAlreadySigned'
+  | 'multisigNoPendingTx'
+  | 'multisigNotRegistered'
+  | 'multisigSpendUnsupported'
+  | 'multisigTxPending'
   | 'unsupportedFeature'
   | 'userAbort'
   | 'vaultDescriptorInvalid'
@@ -130,4 +135,60 @@ export const finishVaultSetup = (): Promise<TVaultAccountResponse> => {
 
 export const discardVaultSetup = (): Promise<TVaultResponse> => {
   return apiPost('vault/setup/discard');
+};
+
+export type TVaultTxKey = {
+  rootFingerprint: string;
+  // Empty if the keystore has never been connected.
+  keystoreName: string;
+  connected: boolean;
+  // True if the keystore holding the key has signed the pending transaction.
+  signed: boolean;
+};
+
+export type TVaultTxRecipient = {
+  address: string;
+  amount: TAmountWithConversions;
+};
+
+// The transaction of a vault that is waiting for its second signature.
+export type TVaultPendingTx = {
+  recipients: TVaultTxRecipient[];
+  amount: TAmountWithConversions;
+  fee: TAmountWithConversions;
+  total: TAmountWithConversions;
+  note: string;
+  // The number of signatures needed to send the transaction.
+  threshold: number;
+  keys: TVaultTxKey[];
+  numSignatures: number;
+  // True if the connected keystore holds a key of the vault and has not signed yet.
+  canSign: boolean;
+  // True if the transaction has enough signatures and only needs to be sent.
+  canBroadcast: boolean;
+};
+
+// Resolves to null if the vault has no pending transaction.
+export const getVaultPendingTx = (accountCode: AccountCode): Promise<TVaultPendingTx | null> => {
+  return apiGet(`vault/pending-tx/${accountCode}`);
+};
+
+// Signs the transaction last proposed for the vault with the first BitBox02. It is pending
+// afterwards.
+export const createVaultTx = (accountCode: AccountCode, note: string): Promise<TVaultResponse> => {
+  return apiPost('vault/pending-tx/create', { accountCode, note });
+};
+
+export type TVaultSignTxResponse = {
+  success: true;
+  // Set once the transaction has enough signatures and was sent.
+  txId?: string;
+} | TVaultFailure;
+
+export const signVaultTx = (accountCode: AccountCode): Promise<TVaultSignTxResponse> => {
+  return apiPost('vault/pending-tx/sign', { accountCode });
+};
+
+export const discardVaultTx = (accountCode: AccountCode): Promise<TVaultResponse> => {
+  return apiPost('vault/pending-tx/discard', { accountCode });
 };

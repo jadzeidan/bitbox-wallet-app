@@ -24,6 +24,12 @@ export const handleSendError = (
   case 'feeTooLow':
   case 'feesNotAvailable':
     return { feeError: t(`send.error.${errorCode}`) };
+  case 'multisigTxPending':
+    alertUser(t('vault.error.multisigTxPending'));
+    return {};
+  case 'multisigSpendUnsupported':
+    alertUser(t('vault.error.multisigSpendUnsupported'));
+    return {};
   default: {
     const message = errorMessage || errorCode;
     if (message) {

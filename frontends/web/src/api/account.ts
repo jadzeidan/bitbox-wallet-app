@@ -446,7 +446,9 @@ export type TTxProposalErrorCode =
   | 'feesNotAvailable'
   | 'insufficientFunds'
   | 'invalidAddress'
-  | 'invalidAmount';
+  | 'invalidAmount'
+  | 'multisigSpendUnsupported'
+  | 'multisigTxPending';
 
 export type TTxProposalResult = {
   amount: TAmountWithConversions;

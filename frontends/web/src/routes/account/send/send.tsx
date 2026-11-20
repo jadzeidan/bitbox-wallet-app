@@ -2,10 +2,13 @@
 
 import { useState, useRef, useEffect, useCallback, useContext } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useLocation } from 'wouter';
 import type { TSelectedUTXOs } from './utxos';
 import { useMountedRef } from '@/hooks/mount';
 import { usePrevious } from '@/hooks/previous';
 import * as accountApi from '@/api/account';
+import { createVaultTx } from '@/api/vault';
+import { getVaultErrorMessage, withVaultRegistration } from '@/routes/account/add/vault/utils';
 import { syncdone } from '@/api/accountsync';
 import { convertFromCurrency, convertToCurrency, type BtcUnit } from '@/api/coins';
 import { View, ViewContent } from '@/components/view/view';
@@ -64,6 +67,7 @@ export const Send = ({
   activeAccounts,
 }: TProps) => {
   const { t } = useTranslation();
+  const [, navigate] = useLocation();
   const { btcUnit, defaultCurrency } = useContext(RatesContext);
   const selectedUTXOsRef = useRef<TSelectedUTXOs>({});
   const [utxoDialogActive, setUtxoDialogActive] = useState(false);
@@ -137,6 +141,22 @@ export const Send = ({
     }
     setIsConfirming(true);
     try {
+      if (account.isVault) {
+        // The first BitBox02 signs. The transaction is then pending on the account page until a
+        // second BitBox02 of the vault has signed it.
+        const result = await withVaultRegistration(
+          account.code,
+          () => createVaultTx(account.code, note),
+        );
+        if (result.success) {
+          navigate(`/account/${account.code}`);
+        } else if (result.errorCode === 'userAbort') {
+          setSendResult({ success: false, aborted: true });
+        } else {
+          setSendResult({ success: false, errorMessage: getVaultErrorMessage(t, result) });
+        }
+        return;
+      }
       const result = await accountApi.sendTx(account.code, note);
       setSendResult(result);
     } catch (err) {
@@ -145,7 +165,7 @@ export const Send = ({
       // The following method allows pressing escape again.
       setIsConfirming(false);
     }
-  }, [account.code, account.keystore.rootFingerprint, note]);
+  }, [account.code, account.isVault, account.keystore.rootFingerprint, navigate, note, t]);
 
   const getValidTxInputData = useCallback((): Required<accountApi.TTxInput> | false => {
     if (
