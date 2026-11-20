@@ -266,3 +266,8 @@ a.sidebarActive .single img,
     vertical-align: top;
     width: 8px;
 }
+
+.sidebarBadge {
+    flex-shrink: 0;
+    margin-right: var(--space-half);
+}

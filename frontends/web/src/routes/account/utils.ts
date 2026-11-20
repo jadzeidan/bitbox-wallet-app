@@ -49,6 +49,18 @@ export const getAccountsByKeystore = <T extends TAccountBase>(accounts: T[]): TA
   }, {} as Record<string, TAccountsByKeystore<T>>));
 };
 
+// Splits the accounts into vault accounts, which are listed in their own section, and all other
+// accounts, which are listed by keystore.
+export const splitVaultAccounts = <T extends TAccountBase>(accounts: T[]): {
+  regularAccounts: T[];
+  vaultAccounts: T[];
+} => {
+  return {
+    regularAccounts: accounts.filter(account => !account.isVault),
+    vaultAccounts: accounts.filter(account => account.isVault),
+  };
+};
+
 type TKeystoreName = {
   keystore: {
     name: string;

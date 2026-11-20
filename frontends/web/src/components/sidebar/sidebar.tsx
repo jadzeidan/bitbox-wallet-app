@@ -12,8 +12,11 @@ import { deregisterTest } from '@/api/keystores';
 import { getVersion } from '@/api/bitbox02';
 import { debug } from '@/utils/env';
 import { AppLogoInverted, Logo } from '@/components/icon/logo';
-import { CloseXWhite, CogLight, Coins, Device, Eject, Linechart, RedDot } from '@/components/icon';
-import { getAccountsByKeystore } from '@/routes/account/utils';
+import { CloseXWhite, CogLight, Coins, Device, Eject, Linechart, RedDot, Shield } from '@/components/icon';
+import { Badge } from '@/components/badge/badge';
+import { getVaultSetup, subscribeVaultSetup } from '@/api/vault';
+import { useSync } from '@/hooks/api';
+import { getAccountsByKeystore, splitVaultAccounts } from '@/routes/account/utils';
 import { SkipForTesting } from '@/routes/device/components/skipfortesting';
 import { AppContext } from '@/contexts/AppContext';
 import { Button } from '@/components/forms';
@@ -107,6 +110,7 @@ const Sidebar = ({
   }, [devices]);
 
   const keystores = useKeystores();
+  const vaultSetup = useSync(getVaultSetup, subscribeVaultSetup);
 
   const handleSidebarItemClick = (event: React.SyntheticEvent) => {
     const el = (event.target as Element).closest('a');
@@ -115,7 +119,9 @@ const Sidebar = ({
     }
   };
 
-  const accountsByKeystore = getAccountsByKeystore(accounts);
+  // Vaults are not owned by a single keystore and are listed in their own section.
+  const { regularAccounts, vaultAccounts } = splitVaultAccounts(accounts);
+  const accountsByKeystore = getAccountsByKeystore(regularAccounts);
   const inMarketSection = pathname.startsWith('/market');
 
   const homePath = (
@@ -178,6 +184,33 @@ const Sidebar = ({
             </div>
           )) }
         </div>
+
+        {(vaultAccounts.length > 0 || vaultSetup) && (
+          <div key="vaults" data-testid="sidebar-vaults">
+            <div className={style.sidebarHeaderContainer}>
+              <span className={style.sidebarHeader}>{t('vault.sectionTitle')}</span>
+            </div>
+            {vaultAccounts.map(acc => (
+              <GetAccountLink key={`account-${acc.code}`} {...acc} handleSidebarItemClick={handleSidebarItemClick} />
+            ))}
+            {vaultSetup && (
+              // A vault that is being created. It leads back to the setup.
+              <div className={style.sidebarItem}>
+                <NavLink
+                  className={({ isActive }) => isActive ? (style.sidebarActive || '') : ''}
+                  to="/add-account/vault/create"
+                  onClick={handleSidebarItemClick}
+                  title={vaultSetup.name}>
+                  <div className={style.single}>
+                    <Shield />
+                  </div>
+                  <span className={style.sidebarLabel}>{vaultSetup.name}</span>
+                  <Badge type="warning" className={style.sidebarBadge}>{t('vault.draft.label')}</Badge>
+                </NavLink>
+              </div>
+            )}
+          </div>
+        )}
 
         <div key="services" className={[style.sidebarHeaderContainer, style.end].join(' ')}></div>
         { hasPortfolio ? (

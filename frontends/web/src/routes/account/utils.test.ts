@@ -5,6 +5,7 @@ import { CoinCode, CoinUnit, TAccount } from '@/api/account';
 import {
   getAccountsByKeystore,
   getDisplayAccountNumber,
+  splitVaultAccounts,
 } from './utils';
 
 
@@ -134,5 +135,30 @@ describe('utils/getAccountsByKeystore', () => {
     expect(result[0].accounts[2].code).toBe(accounts[6].code);
     // @ts-ignore noUncheckedIndexedAccess
     expect(result[1].accounts[3].code).toBe(accounts[5].code);
+  });
+});
+
+describe('utils/splitVaultAccounts', () => {
+  // Vault accounts are listed in their own section, whichever keystore they are presented under.
+  // All other accounts stay available for the grouping by keystore, in their original order.
+  it('separates vault accounts from the accounts listed by keystore', () => {
+    const accounts: TAccount[] = [
+      createAccount({ code: 'a1', keystore: { name: 'W1', rootFingerprint: 'w1' } }),
+      createAccount({ code: 'vault1', isVault: true, keystore: { name: 'W1', rootFingerprint: 'w1' } }),
+      createAccount({ code: 'b1', isVault: false, keystore: { name: 'W2', rootFingerprint: 'w2' } }),
+      createAccount({ code: 'vault2', isVault: true, keystore: { name: 'W2', rootFingerprint: 'w2' } }),
+    ];
+    const { regularAccounts, vaultAccounts } = splitVaultAccounts(accounts);
+    expect(regularAccounts.map(account => account.code)).toEqual(['a1', 'b1']);
+    expect(vaultAccounts.map(account => account.code)).toEqual(['vault1', 'vault2']);
+    expect(getAccountsByKeystore(regularAccounts).map(group => group.accounts.length)).toEqual([1, 1]);
+  });
+
+  it('returns no vault accounts if there are none', () => {
+    const accounts: TAccount[] = [
+      createAccount({ code: 'a1', keystore: { name: 'W1', rootFingerprint: 'w1' } }),
+    ];
+    expect(splitVaultAccounts(accounts)).toEqual({ regularAccounts: accounts, vaultAccounts: [] });
+    expect(splitVaultAccounts([])).toEqual({ regularAccounts: [], vaultAccounts: [] });
   });
 });

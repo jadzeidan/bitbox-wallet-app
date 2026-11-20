@@ -10,7 +10,7 @@ import { getLightningBalance } from '@/api/lightning';
 import { useAppState } from '@/contexts/app-state-context';
 import { Logo } from '@/components/icon/logo';
 import { View, ViewContent } from '@/components/view/view';
-import { getAccountsByKeystore } from '@/routes/account/utils';
+import { getAccountsByKeystore, splitVaultAccounts } from '@/routes/account/utils';
 import { HideAmountsButton } from '@/components/hideamountsbutton/hideamountsbutton';
 import { Main, Header } from '@/components/layout';
 import { ChevronRightDark } from '@/components/icon/icon';
@@ -19,6 +19,9 @@ import { useMountedRef } from '@/hooks/mount';
 import { AmountWithUnit } from '@/components/amount/amount-with-unit';
 import { ConnectedKeystore } from '@/components/keystore/connected-keystore';
 import { useLightning } from '@/hooks/lightning';
+import { getVaultSetup, subscribeVaultSetup } from '@/api/vault';
+import { useSync } from '@/hooks/api';
+import { Badge } from '@/components/badge/badge';
 import styles from './all-accounts.module.css';
 
 type TAccountRowProps = {
@@ -125,7 +128,10 @@ export const AllAccounts = () => {
   const { t } = useTranslation();
   const { activeAccounts } = useAppState();
   const { lightningAccount } = useLightning();
-  const accountsByKeystore = getAccountsByKeystore(activeAccounts);
+  // Vaults are not owned by a single keystore and are listed in their own section.
+  const { regularAccounts, vaultAccounts } = splitVaultAccounts(activeAccounts);
+  const accountsByKeystore = getAccountsByKeystore(regularAccounts);
+  const vaultSetup = useSync(getVaultSetup, subscribeVaultSetup);
   useOnlyVisitableOnMobile('/account-summary');
 
   return (
@@ -155,6 +161,26 @@ export const AllAccounts = () => {
                 </div>
               </div>
             ))}
+            {(vaultAccounts.length > 0 || vaultSetup) && (
+              <div data-testid="all-accounts-vaults">
+                <p className={styles.keystoreName}>{t('vault.sectionTitle')}</p>
+                <div className={styles.accountsList}>
+                  {vaultAccounts.map(account => (
+                    <AccountItem key={`account-${account.code}`} account={account} />
+                  ))}
+                  {vaultSetup && (
+                    // A vault that is being created. It leads back to the setup.
+                    <Link to="/add-account/vault/create" className={styles.accountItem}>
+                      <p className={styles.accountName}>
+                        {vaultSetup.name}
+                      </p>
+                      <Badge type="warning">{t('vault.draft.label')}</Badge>
+                      <ChevronRightDark />
+                    </Link>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </ViewContent>
       </View>

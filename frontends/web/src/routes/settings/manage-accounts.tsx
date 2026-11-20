@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation } from 'wouter';
-import { getAccountsByKeystore } from '@/routes/account/utils';
+import { getAccountsByKeystore, splitVaultAccounts } from '@/routes/account/utils';
 import * as accountAPI from '@/api/account';
 import { supportedERC20Tokens, type ERC20CoinCode } from '@/api/erc20';
 import * as backendAPI from '@/api/backend';
@@ -22,6 +22,9 @@ import { AccountGuide } from './manage-account-guide';
 import { WatchonlySetting } from './components/manage-accounts/watchonlySetting';
 import { ConnectedKeystore } from '@/components/keystore/connected-keystore';
 import { TokenListItem } from '@/components/token-list-item/token-list-item';
+import { getVaultSetup, subscribeVaultSetup } from '@/api/vault';
+import { useSync } from '@/hooks/api';
+import { Badge } from '@/components/badge/badge';
 import style from './manage-accounts.module.css';
 
 type TShowTokens = {
@@ -31,6 +34,7 @@ type TShowTokens = {
 export const ManageAccounts = () => {
   const { t } = useTranslation();
   const [, navigate] = useLocation();
+  const vaultSetup = useSync(getVaultSetup, subscribeVaultSetup);
   const { accounts } = useAppState();
 
   const [editErrorMessage, setEditErrorMessage] = useState<string | undefined>(undefined);
@@ -181,7 +185,9 @@ export const ManageAccounts = () => {
     });
   };
 
-  const accountsByKeystore = getAccountsByKeystore(accounts);
+  // Vaults are not owned by a single keystore and are listed in their own section.
+  const { regularAccounts, vaultAccounts } = splitVaultAccounts(accounts);
+  const accountsByKeystore = getAccountsByKeystore(regularAccounts);
   return (
     <GuideWrapper>
       <GuidedContent>
@@ -219,6 +225,28 @@ export const ManageAccounts = () => {
                         {renderAccounts(keystore.accounts)}
                       </Column>
                     )) }
+                    {(vaultAccounts.length > 0 || vaultSetup) && (
+                      <Column key="vaults" asCard>
+                        <div className={style.walletHeader}>
+                          <span>{t('vault.sectionTitle')}</span>
+                        </div>
+                        {renderAccounts(vaultAccounts)}
+                        {vaultSetup && (
+                          // A vault that is being created. It leads back to the setup.
+                          <div className={style.setting} data-testid="manage-accounts-vault-draft">
+                            <div
+                              className={`${style.accountLink || ''} ${style.accountActive || ''}`}
+                              onClick={() => navigate('/add-account/vault/create')}>
+                              <span>
+                                {vaultSetup.name}
+                                {' '}
+                                <Badge type="warning">{t('vault.draft.label')}</Badge>
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                      </Column>
+                    )}
                   </Grid>
                 </div>
                 {currentlyEditedAccount && (

@@ -2751,6 +2751,9 @@
     "details": {
       "vaultFile": "Vault file. Together with two of the three BitBox02s, it is needed to recover the funds of this vault."
     },
+    "draft": {
+      "label": "Draft"
+    },
     "error": {
       "accountAlreadyExists": "This vault has already been added.",
       "accountLimitReached": "This BitBox02 cannot be part of more vaults.",
@@ -2787,6 +2790,7 @@
       "registered": "Registered",
       "threshold": "{{threshold}} of {{numKeys}} keys are needed to spend."
     },
+    "sectionTitle": "Vaults",
     "start": {
       "create": {
         "description": "You need three BitBox02s at hand.",
