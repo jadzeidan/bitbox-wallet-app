@@ -234,7 +234,7 @@ func (txs OrderedTransactions) EarliestTime() (time.Time, error) {
 }
 
 // Timeseries chunks the time between `start` and `end` into steps of `interval` duration, and
-// provides the balance of the account at each step.
+// provides the balance of the account at each step. There are no steps if `start` is after `end`.
 func (txs OrderedTransactions) Timeseries(
 	start, end time.Time, interval time.Duration) ([]TimeseriesEntry, error) {
 	for _, tx := range txs {
@@ -248,7 +248,7 @@ func (txs OrderedTransactions) Timeseries(
 	}
 
 	result := []TimeseriesEntry{}
-	for {
+	for !currentTime.After(end) {
 		// Find the latest tx before `currentTime`.
 		nextIndex := sort.Search(len(txs), func(idx int) bool {
 			tx := txs[idx]
@@ -270,9 +270,6 @@ func (txs OrderedTransactions) Timeseries(
 		})
 
 		currentTime = currentTime.Add(interval)
-		if currentTime.After(end) {
-			break
-		}
 	}
 	return result, nil
 }

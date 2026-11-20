@@ -312,3 +312,41 @@ func TestOrderedTransactionsDeductedAmount(t *testing.T) {
 	requireAmountIsEqualTo(t, orderedTxs[3].DeductedAmount, 100)
 	requireAmountIsEqualTo(t, orderedTxs[4].DeductedAmount, 110)
 }
+
+// A time series has no entries if its start is after its end. This happens for an account whose
+// first transaction is in a block with a timestamp ahead of the end of the series: block
+// timestamps can be up to two hours in the future. An entry at such a start would be later than
+// the points that follow it in the portfolio chart.
+func TestTimeseriesStartAfterEnd(t *testing.T) {
+	blockTime := time.Date(2020, 9, 21, 1, 0, 0, 0, time.UTC)
+	ordered := NewOrderedTransactions([]*TransactionData{
+		{
+			Timestamp: &blockTime,
+			Height:    10,
+			Type:      TxTypeReceive,
+			Amount:    coin.NewAmountFromInt64(100),
+		},
+	})
+	end := time.Date(2020, 9, 20, 23, 0, 0, 0, time.UTC)
+
+	timeseries, err := ordered.Timeseries(blockTime.Truncate(24*time.Hour), end, 24*time.Hour)
+	require.NoError(t, err)
+	require.Empty(t, timeseries)
+
+	// A series that starts exactly at its end has one entry.
+	timeseries, err = ordered.Timeseries(end, end, time.Hour)
+	require.NoError(t, err)
+	require.Equal(t, []TimeseriesEntry{
+		{Time: end, Value: coin.NewAmountFromInt64(0)},
+	}, timeseries)
+
+	// Once the end has passed the block time, the transaction is part of the series.
+	later := time.Date(2020, 9, 21, 2, 0, 0, 0, time.UTC)
+	timeseries, err = ordered.Timeseries(blockTime.Truncate(24*time.Hour), later, time.Hour)
+	require.NoError(t, err)
+	require.Equal(t, []TimeseriesEntry{
+		{Time: time.Date(2020, 9, 21, 0, 0, 0, 0, time.UTC), Value: coin.NewAmountFromInt64(0)},
+		{Time: time.Date(2020, 9, 21, 1, 0, 0, 0, time.UTC), Value: coin.NewAmountFromInt64(100)},
+		{Time: time.Date(2020, 9, 21, 2, 0, 0, 0, time.UTC), Value: coin.NewAmountFromInt64(100)},
+	}, timeseries)
+}
