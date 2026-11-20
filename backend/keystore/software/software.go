@@ -292,8 +292,82 @@ func (keystore *Keystore) Features() *keystorePkg.Features {
 	}
 }
 
+// signBTCMultisigTransaction adds the signature of this keystore to every input of a transaction
+// that spends from a multisig account. The PSBT states the witness script and the key of every
+// cosigner for each input. Signatures of other cosigners are kept.
+func (keystore *Keystore) signBTCMultisigTransaction(packet *psbt.Packet) error {
+	rootFingerprint, err := keystore.RootFingerprint()
+	if err != nil {
+		return err
+	}
+	fingerprint := binary.LittleEndian.Uint32(rootFingerprint)
+	transaction := packet.UnsignedTx
+
+	prevOutputs := map[wire.OutPoint]*wire.TxOut{}
+	for index, txIn := range transaction.TxIn {
+		utxo := packet.Inputs[index].WitnessUtxo
+		if utxo == nil {
+			return errp.Newf("input %d: the output being spent is missing", index)
+		}
+		prevOutputs[txIn.PreviousOutPoint] = utxo
+	}
+	sigHashes := txscript.NewTxSigHashes(transaction, txscript.NewMultiPrevOutFetcher(prevOutputs))
+
+	for index := range transaction.TxIn {
+		input := &packet.Inputs[index]
+		var derivation *psbt.Bip32Derivation
+		for _, candidate := range input.Bip32Derivation {
+			if candidate.MasterKeyFingerprint == fingerprint {
+				derivation = candidate
+				break
+			}
+		}
+		if derivation == nil {
+			return errp.Newf("input %d: the key of this keystore is missing", index)
+		}
+		xprv := keystore.master
+		for _, child := range derivation.Bip32Path {
+			xprv, err = xprv.Derive(child)
+			if err != nil {
+				return errp.WithStack(err)
+			}
+		}
+		prv, err := xprv.ECPrivKey()
+		if err != nil {
+			return errp.WithStack(err)
+		}
+		if !bytes.Equal(prv.PubKey().SerializeCompressed(), derivation.PubKey) {
+			return errp.Newf("input %d: the key does not belong to this keystore", index)
+		}
+		signatureHash, err := txscript.CalcWitnessSigHash(
+			input.WitnessScript, sigHashes, txscript.SigHashAll,
+			transaction, index, input.WitnessUtxo.Value)
+		if err != nil {
+			return errp.Wrap(err, "Failed to calculate SegWit signature hash")
+		}
+		partialSig := &psbt.PartialSig{
+			PubKey:    derivation.PubKey,
+			Signature: append(ecdsa.Sign(prv, signatureHash).Serialize(), byte(txscript.SigHashAll)),
+		}
+		replaced := false
+		for sigIndex, existing := range input.PartialSigs {
+			if bytes.Equal(existing.PubKey, derivation.PubKey) {
+				input.PartialSigs[sigIndex] = partialSig
+				replaced = true
+			}
+		}
+		if !replaced {
+			input.PartialSigs = append(input.PartialSigs, partialSig)
+		}
+	}
+	return nil
+}
+
 func (keystore *Keystore) signBTCTransaction(btcProposedTx *btc.ProposedTransaction) error {
 	keystore.log.Info("Sign transaction.")
+	if btcProposedTx.AccountSigningConfigurations.Multisig() != nil {
+		return keystore.signBTCMultisigTransaction(btcProposedTx.TXProposal.Psbt)
+	}
 	transaction := btcProposedTx.TXProposal.Psbt.UnsignedTx
 	sigHashes := btcProposedTx.TXProposal.SigHashes()
 	for index, txIn := range transaction.TxIn {

@@ -509,6 +509,18 @@ func (keystore *keystore) signBTCTransaction(btcProposedTx *btc.ProposedTransact
 		},
 	}
 
+	if multisig := btcProposedTx.AccountSigningConfigurations.Multisig(); multisig != nil {
+		// The script config of a multisig account can't be inferred from the PSBT.
+		scriptConfig, accountKeypath, err := keystore.btcMultisigScriptConfig(multisig)
+		if err != nil {
+			return err
+		}
+		signOptions.ForceScriptConfig = &messages.BTCScriptConfigWithKeypath{
+			ScriptConfig: scriptConfig,
+			Keypath:      accountKeypath.ToUInt32(),
+		}
+	}
+
 	// Include previous transactions in PSBT if the BitBox requires it.
 	needsPrevTxs, err := keystore.device.BTCSignNeedsNonWitnessUTXOs(
 		btcProposedTx.TXProposal.Psbt, signOptions)
