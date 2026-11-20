@@ -15,6 +15,7 @@ import { AppNotifications } from './components/notification';
 import { Aopp } from './components/aopp/aopp';
 import { Confirm } from './components/confirm/Confirm';
 import { KeystoreConnectPrompt } from './components/keystoreconnectprompt';
+import { VaultSetupPrompt } from './components/vault-setup-prompt/vault-setup-prompt';
 import { Sidebar } from './components/sidebar/sidebar';
 import { RouterWatcher } from './utils/route';
 import { Darkmode } from './components/darkmode/darkmode';
@@ -65,6 +66,7 @@ const AppFrame = () => {
           <Aopp />
           <LightningPaymentRequest />
           <KeystoreConnectPrompt />
+          <VaultSetupPrompt />
           {
             Object.entries(devices).map(([deviceID, platformName]) => {
               if (platformName === 'bitbox02') {
