@@ -128,7 +128,7 @@ func groupAccountViewsByKeystore(accountViews AccountViews) (KeystoresAccountVie
 	accountsByKeystore := KeystoresAccountViewsMap{}
 	for index := range accountViews {
 		accountView := &accountViews[index]
-		rootFingerprint, err := accountView.Record.SigningConfigurations.RootFingerprint()
+		rootFingerprint, err := accountView.KeystoreRootFingerprint()
 		if err != nil {
 			return nil, err
 		}
@@ -826,16 +826,23 @@ func (backend *Backend) CheckKeystoreFeature(
 // ConnectKeystore ensures that the keystore with the given root fingerprint is connected,
 // prompts the user if necessary, and returns the keystore instance.
 func (backend *Backend) ConnectKeystore(rootFingerprint []byte) (keystore.Keystore, error) {
+	return backend.ConnectKeystoreAnyOf([][]byte{rootFingerprint})
+}
+
+// ConnectKeystoreAnyOf ensures that a keystore with one of the given root fingerprints is
+// connected, prompts the user if necessary, and returns the keystore instance.
+func (backend *Backend) ConnectKeystoreAnyOf(rootFingerprints [][]byte) (keystore.Keystore, error) {
 	type data struct {
 		Type         string `json:"typ"`
 		KeystoreName string `json:"keystoreName"`
 		ErrorCode    string `json:"errorCode,omitempty"`
 		ErrorMessage string `json:"errorMessage"`
 	}
+	// The prompt names the keystore to connect if there is exactly one candidate.
 	var keystoreName string
 	accountsConfig, err := backend.accountsDB.Snapshot()
-	if err == nil {
-		persistedKeystore, lookupErr := accountsConfig.LookupKeystore(rootFingerprint)
+	if err == nil && len(rootFingerprints) == 1 {
+		persistedKeystore, lookupErr := accountsConfig.LookupKeystore(rootFingerprints[0])
 		if lookupErr == nil {
 			keystoreName = persistedKeystore.Name
 		}
@@ -856,9 +863,9 @@ outerLoop:
 			})
 		}
 		// Re-read after notifying observers, as a keystore may have connected in the meantime.
-		ks, err = backend.connectKeystore.connect(
+		ks, err = backend.connectKeystore.connectAnyOf(
 			backend.Keystore(),
-			rootFingerprint,
+			rootFingerprints,
 			timeout,
 		)
 		if err == nil || errp.Cause(err) != ErrWrongKeystore {
@@ -970,11 +977,12 @@ func (backend *Backend) createAndAddAccount(
 		SkipInitialSync:       options.skipETHInitialSync,
 		NotesFolder:           backend.arguments.NotesDirectoryPath(),
 		ConnectKeystore: func() (keystore.Keystore, error) {
-			accountRootFingerprint, err := signingConfigurations.RootFingerprint()
-			if err != nil {
-				return nil, err
+			// Any keystore holding a key of a multisig account can be used with it.
+			accountRootFingerprints := signingConfigurations.RootFingerprints()
+			if len(accountRootFingerprints) == 0 {
+				return nil, errp.New("Could not retrieve fingerprint from signing configurations")
 			}
-			return backend.ConnectKeystore(accountRootFingerprint)
+			return backend.ConnectKeystoreAnyOf(accountRootFingerprints)
 		},
 		RateUpdater: backend.ratesUpdater,
 		GetMainCurrency: func() string {
@@ -1280,9 +1288,11 @@ func (backend *Backend) persistAccount(account config.Account, accountsConfig *c
 			backend.log.Errorf("An account with same code exists: %s", account.Code)
 			return errp.WithStack(errAccountAlreadyExists)
 		}
-		if account.CoinCode == existingAccount.CoinCode {
+		if account.CoinCode == existingAccount.CoinCode &&
+			!account.IsMultisig() && !existingAccount.IsMultisig() {
 			// We detect a duplicate account (subaccount in a unified account) if any of the
-			// configurations is already present.
+			// configurations is already present. Multisig accounts are identified by their account
+			// code alone.
 			for _, signingConfig := range account.SigningConfigurations {
 				for _, existingSigningConfig := range existingAccount.SigningConfigurations {
 					if signingConfig.ExtendedPublicKey().String() ==
@@ -1453,6 +1463,9 @@ func (backend *Backend) maybeAddP2TR(
 ) ([]accountsTypes.Code, error) {
 	var changedAccountCodes []accountsTypes.Code
 	for _, account := range accounts {
+		if account.IsMultisig() {
+			continue
+		}
 		if account.CoinCode == coinpkg.CodeBTC ||
 			account.CoinCode == coinpkg.CodeTBTC ||
 			account.CoinCode == coinpkg.CodeRBTC {

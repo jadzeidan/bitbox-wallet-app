@@ -168,3 +168,92 @@ func TestMigrateActiveToken(t *testing.T) {
 	// eth-erc20-sai0x89d was removed by the migration.
 	require.Equal(t, []string{"TOKEN-2"}, acct.ActiveTokens)
 }
+
+func multisigTestAccount(t *testing.T, code accountsTypes.Code) *Account {
+	t.Helper()
+	keypath, err := signing.NewAbsoluteKeypath("m/48'/0'/0'/2'")
+	require.NoError(t, err)
+	keys := make([]signing.KeyInfo, 3)
+	for index, xpub := range []string{
+		"xpub6FEZ9Bv73h1vnE4TJG4QFj2RPXJhhsPbnXgFyH3ErLvpcZrDcynY65bhWga8PazWHLSLi23PoBhGcLcYW6JRiJ12zXZ9Aop4LbAqsS3gtcy",
+		"xpub6EGAio99SxruuNxoBtG4fbYx3xM8fs7wjYJLRNcUg7UQin3LTANQiUYyb3RLjZ2EAyLsQBrtbNENUGh3oWzjHtgfQ3mtjPNFgNMronzTTVR",
+		"xpub6EMfjyGVUvwhpc3WKN1zXhMFGKJGMaSBPqbja4tbGoYvRBSXeTBCaqrRDjcuGTcaY95JrrAnQvDG3pdQPdtnYUCugjeksHSbyZT7rq38VQF",
+	} {
+		keys[index] = signing.KeyInfo{
+			RootFingerprint:   []byte{byte(index + 1), 0, 0, 0},
+			AbsoluteKeypath:   keypath,
+			ExtendedPublicKey: test.TstMustXKey(xpub),
+		}
+	}
+	configuration, err := signing.NewBitcoinMultisigConfiguration(2, keys)
+	require.NoError(t, err)
+	return &Account{
+		Code:                  code,
+		SigningConfigurations: signing.Configurations{configuration},
+	}
+}
+
+// A multisig account is never found by the xpub of one of its keys, and looking up an xpub works
+// with multisig accounts present.
+func TestLookupByXpubMultisig(t *testing.T) {
+	keypath, err := signing.NewAbsoluteKeypath("m/84'/0'/0'")
+	require.NoError(t, err)
+	someXPub := "xpub661MyMwAqRbcGAo79WnM4653Aog3nKuTYq2Wy1iURzbaGE36dgnPPMxX5oCvCiky5bFbS2jS9RfAHVtpCNCEBwy6BUjLxhXYGu19NwTgrFX"
+	multisigAccount := multisigTestAccount(t, "vault")
+	cfg := AccountsConfig{
+		Accounts: []*Account{
+			multisigAccount,
+			{
+				Code: "a",
+				SigningConfigurations: signing.Configurations{
+					signing.NewBitcoinConfiguration(
+						signing.ScriptTypeP2WPKH,
+						[]byte{1, 2, 3, 4},
+						keypath,
+						test.TstMustXKey(someXPub),
+					),
+				},
+			},
+		},
+	}
+	require.True(t, multisigAccount.IsMultisig())
+	require.False(t, cfg.Accounts[1].IsMultisig())
+
+	acctCode, err := cfg.LookupByXpub(someXPub)
+	require.NoError(t, err)
+	require.Equal(t, accountsTypes.Code("a"), acctCode)
+
+	multisigKey := multisigAccount.SigningConfigurations[0].BitcoinMultisig.Keys[0]
+	_, err = cfg.LookupByXpub(multisigKey.ExtendedPublicKey.String())
+	require.Error(t, err)
+}
+
+// A multisig account is watch-only as soon as one of the keystores holding its keys is marked as
+// watchonly.
+func TestIsAccountWatchOnlyMultisig(t *testing.T) {
+	account := multisigTestAccount(t, "vault")
+	cfg := AccountsConfig{
+		Accounts: []*Account{account},
+		Keystores: []*Keystore{
+			{RootFingerprint: []byte{1, 0, 0, 0}},
+			{RootFingerprint: []byte{3, 0, 0, 0}},
+			{RootFingerprint: []byte{9, 9, 9, 9}, Watchonly: true},
+		},
+	}
+	watchonly, err := cfg.IsAccountWatchOnly(account)
+	require.NoError(t, err)
+	require.False(t, watchonly)
+
+	cfg.Keystores[1].Watchonly = true
+	watchonly, err = cfg.IsAccountWatchOnly(account)
+	require.NoError(t, err)
+	require.True(t, watchonly)
+
+	account.HiddenBecauseUnused = true
+	watchonly, err = cfg.IsAccountWatchOnly(account)
+	require.NoError(t, err)
+	require.False(t, watchonly)
+
+	_, err = cfg.IsAccountWatchOnly(&Account{Code: "empty"})
+	require.Error(t, err)
+}

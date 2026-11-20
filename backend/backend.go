@@ -535,7 +535,7 @@ func (backend *Backend) notifyNewTxs(account accounts.Interface) {
 		if err != nil {
 			backend.log.WithError(err).Error("could not load account name")
 		} else {
-			if accountView := joinAccountView(account, accountsConfig); accountView != nil {
+			if accountView := joinAccountView(account, accountsConfig, nil); accountView != nil {
 				accountName = accountView.Record.Name
 			}
 		}
@@ -846,7 +846,14 @@ func (backend *Backend) accountViewsLocked() AccountViews {
 		backend.log.WithError(err).Error("could not load account snapshot")
 		return AccountViews{}
 	}
-	return joinAccountViews(backend.accounts.all(), accountsConfig)
+	var connectedRootFingerprint []byte
+	if backend.keystore != nil {
+		connectedRootFingerprint, err = backend.keystore.RootFingerprint()
+		if err != nil {
+			backend.log.WithError(err).Error("could not retrieve keystore fingerprint")
+		}
+	}
+	return joinAccountViews(backend.accounts.all(), accountsConfig, connectedRootFingerprint)
 }
 
 // OnAccountInit installs a callback to be called when an account is initialized.
@@ -956,8 +963,11 @@ func (backend *Backend) registerKeystore(ks keystore.Keystore) {
 		Action:  action.Reload,
 	})
 
+	// Multisig accounts are shared with other keystores. They do not count as accounts of this
+	// keystore when deciding whether to create its default accounts or to upgrade its accounts.
 	belongsToKeystore := func(_ *config.AccountsConfig, account *config.Account) bool {
-		return account.SigningConfigurations.ContainsRootFingerprint(fingerprint)
+		return !account.IsMultisig() &&
+			account.SigningConfigurations.ContainsRootFingerprint(fingerprint)
 	}
 
 	keystoreName, keystoreNameErr := ks.Name()

@@ -33,18 +33,33 @@ type connectKeystore struct {
 	cancelFunc    context.CancelCauseFunc
 }
 
+// compareRootFingerprint returns nil if the keystore has the given root fingerprint, and
+// `ErrWrongKeystore` otherwise. An empty root fingerprint accepts any keystore.
 func compareRootFingerprint(ks keystore.Keystore, rootFingerprint []byte) error {
-	if len(rootFingerprint) == 0 {
-		return nil
+	return compareRootFingerprints(ks, [][]byte{rootFingerprint})
+}
+
+// compareRootFingerprints returns nil if the keystore's root fingerprint is one of
+// rootFingerprints, and `ErrWrongKeystore` otherwise. An empty root fingerprint accepts any
+// keystore.
+func compareRootFingerprints(ks keystore.Keystore, rootFingerprints [][]byte) error {
+	var keystoreRootFingerprint []byte
+	for _, rootFingerprint := range rootFingerprints {
+		if len(rootFingerprint) == 0 {
+			return nil
+		}
+		if keystoreRootFingerprint == nil {
+			var err error
+			keystoreRootFingerprint, err = ks.RootFingerprint()
+			if err != nil {
+				return err
+			}
+		}
+		if bytes.Equal(rootFingerprint, keystoreRootFingerprint) {
+			return nil
+		}
 	}
-	keystoreRootFingerprint, err := ks.RootFingerprint()
-	if err != nil {
-		return err
-	}
-	if !bytes.Equal(rootFingerprint, keystoreRootFingerprint) {
-		return ErrWrongKeystore
-	}
-	return nil
+	return ErrWrongKeystore
 }
 
 // connect blocks until the keystore with the given rootFingerprint is connected and then returns
@@ -58,6 +73,16 @@ func compareRootFingerprint(ks keystore.Keystore, rootFingerprint []byte) error 
 func (c *connectKeystore) connect(
 	currentKeystore keystore.Keystore,
 	rootFingerprint []byte,
+	timeout time.Duration,
+) (keystore.Keystore, error) {
+	return c.connectAnyOf(currentKeystore, [][]byte{rootFingerprint}, timeout)
+}
+
+// connectAnyOf is like `connect()`, but accepts a keystore with any of the given root
+// fingerprints.
+func (c *connectKeystore) connectAnyOf(
+	currentKeystore keystore.Keystore,
+	rootFingerprints [][]byte,
 	timeout time.Duration,
 ) (keystore.Keystore, error) {
 	type result struct {
@@ -76,7 +101,7 @@ func (c *connectKeystore) connect(
 	}
 
 	if currentKeystore != nil {
-		if err := compareRootFingerprint(currentKeystore, rootFingerprint); err != nil {
+		if err := compareRootFingerprints(currentKeystore, rootFingerprints); err != nil {
 			return nil, err
 		}
 		return currentKeystore, nil
@@ -95,7 +120,7 @@ func (c *connectKeystore) connect(
 		defer c.Lock()()
 		c.cancelFunc = cancel
 		c.connectKeystoreCallback = func(ks keystore.Keystore) {
-			if err := compareRootFingerprint(ks, rootFingerprint); err != nil {
+			if err := compareRootFingerprints(ks, rootFingerprints); err != nil {
 				resultCh <- result{nil, err}
 				return
 			}

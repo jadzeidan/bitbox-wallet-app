@@ -263,6 +263,10 @@ func (backend *Backend) swapAccounts() ([]SwapAccount, []SwapAccount, error) {
 			continue
 		}
 
+		if persistedAccount.IsMultisig() {
+			// Swaps are only offered for single-signature accounts.
+			continue
+		}
 		rootFingerprint, err := persistedAccount.SigningConfigurations.RootFingerprint()
 		if err != nil {
 			backend.log.WithField("code", persistedAccount.Code).Error("could not identify root fingerprint")

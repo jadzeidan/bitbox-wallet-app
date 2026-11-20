@@ -94,7 +94,9 @@ func (backend *Backend) exportNotes(writer io.Writer) error {
 		// from the ETH account), and the user cannot modify the ERC20 token account name.
 		ethCoin, isETHCoin := account.Coin().(*eth.Coin)
 		isERC20 := isETHCoin && ethCoin.ERC20Token() != nil
-		if accountName != "" && !isERC20 {
+		// The name of a multisig account is not exported, as the account is not identified by the
+		// xpub of one of its keys.
+		if accountName != "" && !isERC20 && !accountView.Record.IsMultisig() {
 			for _, signingConfig := range accountView.Record.SigningConfigurations {
 				entry := bip329Entry{
 					Type:  bip329TypeXpub,

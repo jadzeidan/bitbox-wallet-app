@@ -72,6 +72,12 @@ func (acct *Account) SetTokenActive(tokenCode string, active bool) error {
 	return nil
 }
 
+// IsMultisig returns true if spending from the account requires the signatures of multiple
+// keystores.
+func (acct *Account) IsMultisig() bool {
+	return acct.SigningConfigurations.Multisig() != nil
+}
+
 // SetReceiveScriptType stores the receive script type for this account.
 func (acct *Account) SetReceiveScriptType(scriptType signing.ScriptType) error {
 	if acct.SigningConfigurations.FindScriptType(scriptType) == -1 {
@@ -185,6 +191,10 @@ func (cfg AccountsConfig) Lookup(code accountsTypes.Code) *Account {
 // "ypub"/"zpub" etc. ERC20-tokens are excluded.
 func (cfg AccountsConfig) LookupByXpub(xpub string) (accountsTypes.Code, error) {
 	for _, acct := range cfg.Accounts {
+		if acct.IsMultisig() {
+			// A multisig account is not identified by the xpub of one of its keys.
+			continue
+		}
 		for _, signingConfig := range acct.SigningConfigurations {
 			if xpub == signingConfig.ExtendedPublicKey().String() {
 				return acct.Code, nil
@@ -227,18 +237,24 @@ func (cfg *AccountsConfig) GetOrAddKeystore(rootFingerprint []byte) *Keystore {
 	return ks
 }
 
-// IsAccountWatchOnly returns true if the keystore for the account is marked as watchonly.
+// IsAccountWatchOnly returns true if the keystore for the account is marked as watchonly. A
+// multisig account is watch-only if any of the keystores holding one of its keys is marked as
+// watchonly.
 func (cfg AccountsConfig) IsAccountWatchOnly(account *Account) (bool, error) {
 	if account.HiddenBecauseUnused {
 		return false, nil
 	}
 
-	rootFingerprint, err := account.SigningConfigurations.RootFingerprint()
-	if err != nil {
-		return false, err
+	rootFingerprints := account.SigningConfigurations.RootFingerprints()
+	if len(rootFingerprints) == 0 {
+		return false, errp.New("Could not retrieve fingerprint from signing configurations")
 	}
-
-	return cfg.IsKeystoreWatchonly(rootFingerprint), nil
+	for _, rootFingerprint := range rootFingerprints {
+		if cfg.IsKeystoreWatchonly(rootFingerprint) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // migrateActiveTokens removes tokens from AccountsConfig.

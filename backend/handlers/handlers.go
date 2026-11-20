@@ -831,7 +831,7 @@ func (handlers *Handlers) getAccounts(*http.Request) interface{} {
 		if accountView.Record.HiddenBecauseUnused {
 			continue
 		}
-		rootFingerprint, err := accountView.Record.SigningConfigurations.RootFingerprint()
+		rootFingerprint, err := accountView.KeystoreRootFingerprint()
 		if err != nil {
 			handlers.log.WithField("code", accountView.Record.Code).Error("could not identify root fingerprint")
 			continue

@@ -89,9 +89,53 @@ func derivedTokenRecord(
 	return nil, nil
 }
 
+// KeystoreRootFingerprint returns the root fingerprint of the keystore the account is presented
+// under.
+func (view *AccountView) KeystoreRootFingerprint() ([]byte, error) {
+	if view.Keystore != nil {
+		return view.Keystore.RootFingerprint, nil
+	}
+	return view.Record.SigningConfigurations.RootFingerprint()
+}
+
+// multisigAccountKeystore returns the keystore a multisig account is presented under. Several
+// keystores hold a key of the account. The connected one is used if it is one of them, followed by
+// one that is marked as watchonly, followed by any that is known.
+func multisigAccountKeystore(
+	record *config.Account,
+	accountsConfig config.AccountsConfig,
+	connectedRootFingerprint []byte,
+) *config.Keystore {
+	rootFingerprints := record.SigningConfigurations.RootFingerprints()
+	var watchonlyKeystore, knownKeystore *config.Keystore
+	for _, rootFingerprint := range rootFingerprints {
+		persistedKeystore, err := accountsConfig.LookupKeystore(rootFingerprint)
+		if err != nil {
+			continue
+		}
+		if bytes.Equal(rootFingerprint, connectedRootFingerprint) {
+			return persistedKeystore
+		}
+		if watchonlyKeystore == nil && persistedKeystore.Watchonly {
+			watchonlyKeystore = persistedKeystore
+		}
+		if knownKeystore == nil {
+			knownKeystore = persistedKeystore
+		}
+	}
+	if watchonlyKeystore != nil {
+		return watchonlyKeystore
+	}
+	return knownKeystore
+}
+
+// joinAccountView joins a loaded account with its persisted record and keystore.
+// connectedRootFingerprint is the root fingerprint of the connected keystore, or nil if no keystore
+// is connected.
 func joinAccountView(
 	account accounts.Interface,
 	accountsConfig config.AccountsConfig,
+	connectedRootFingerprint []byte,
 ) *AccountView {
 	var record *config.Account
 	var parentCode *accountsTypes.Code
@@ -105,9 +149,13 @@ func joinAccountView(
 	}
 
 	var persistedKeystore *config.Keystore
-	rootFingerprint, err := record.SigningConfigurations.RootFingerprint()
-	if err == nil {
-		persistedKeystore, _ = accountsConfig.LookupKeystore(rootFingerprint)
+	if record.IsMultisig() {
+		persistedKeystore = multisigAccountKeystore(record, accountsConfig, connectedRootFingerprint)
+	} else {
+		rootFingerprint, err := record.SigningConfigurations.RootFingerprint()
+		if err == nil {
+			persistedKeystore, _ = accountsConfig.LookupKeystore(rootFingerprint)
+		}
 	}
 
 	return &AccountView{
@@ -121,10 +169,11 @@ func joinAccountView(
 func joinAccountViews(
 	runtimeAccounts AccountsList,
 	accountsConfig config.AccountsConfig,
+	connectedRootFingerprint []byte,
 ) AccountViews {
 	views := make(AccountViews, 0, len(runtimeAccounts))
 	for _, account := range runtimeAccounts {
-		if view := joinAccountView(account, accountsConfig); view != nil {
+		if view := joinAccountView(account, accountsConfig, connectedRootFingerprint); view != nil {
 			views = append(views, *view)
 		}
 	}
@@ -177,6 +226,11 @@ func lessAccountSortOrder(
 		return coinCmp < 0
 	}
 
+	// Multisig accounts follow the single-signature accounts of the same coin.
+	if accountConfig1.IsMultisig() != accountConfig2.IsMultisig() {
+		return accountConfig2.IsMultisig()
+	}
+
 	if len(accountConfig1.SigningConfigurations) > 0 && len(accountConfig2.SigningConfigurations) > 0 {
 		signingCfg1 := accountConfig1.SigningConfigurations[0]
 		signingCfg2 := accountConfig2.SigningConfigurations[0]
@@ -215,8 +269,8 @@ func sortAccountViews(views AccountViews) {
 			view1.Keystore.Name != view2.Keystore.Name {
 			return view1.Keystore.Name < view2.Keystore.Name
 		}
-		rootFingerprint1, err1 := view1.Record.SigningConfigurations.RootFingerprint()
-		rootFingerprint2, err2 := view2.Record.SigningConfigurations.RootFingerprint()
+		rootFingerprint1, err1 := view1.KeystoreRootFingerprint()
+		rootFingerprint2, err2 := view2.KeystoreRootFingerprint()
 		if err1 == nil && err2 == nil {
 			if cmp := bytes.Compare(rootFingerprint1, rootFingerprint2); cmp != 0 {
 				return cmp < 0

@@ -117,3 +117,42 @@ func TestConnectKeystore(t *testing.T) {
 		wg.Wait()
 	})
 }
+
+// A keystore is accepted if its root fingerprint is any of the requested ones, as needed for
+// accounts with keys on multiple keystores.
+func TestConnectKeystoreAnyOf(t *testing.T) {
+	ck := connectKeystore{}
+	fingerprint := []byte{1, 2, 3, 4}
+	otherFingerprint := []byte{5, 6, 7, 8}
+	thirdFingerprint := []byte{9, 9, 9, 9}
+	connectedKeystore := &keystoremock.KeystoreMock{
+		RootFingerprintFunc: func() ([]byte, error) {
+			return fingerprint, nil
+		},
+	}
+
+	ks, err := ck.connectAnyOf(
+		connectedKeystore, [][]byte{otherFingerprint, fingerprint}, time.Millisecond)
+	require.NoError(t, err)
+	require.Equal(t, connectedKeystore, ks)
+
+	_, err = ck.connectAnyOf(
+		connectedKeystore, [][]byte{otherFingerprint, thirdFingerprint}, time.Millisecond)
+	require.Equal(t, ErrWrongKeystore, errp.Cause(err))
+
+	// A keystore that connects later is matched against all requested fingerprints.
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		ks, err := ck.connectAnyOf(nil, [][]byte{otherFingerprint, fingerprint}, time.Second)
+		require.NoError(t, err)
+		require.Equal(t, connectedKeystore, ks)
+	}()
+	require.Eventually(t, func() bool {
+		defer ck.RLock()()
+		return ck.connectKeystoreCallback != nil
+	}, time.Second, time.Millisecond)
+	ck.onConnect(connectedKeystore)
+	wg.Wait()
+}

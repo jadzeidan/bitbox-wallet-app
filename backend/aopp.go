@@ -185,6 +185,10 @@ func (backend *Backend) aoppKeystoreRegistered() {
 	accountViews := backend.accountViewsLocked()
 	for index := range accountViews {
 		accountView := &accountViews[index]
+		if accountView.Record.IsMultisig() {
+			// Address ownership proofs require a single-signature address.
+			continue
+		}
 		accountFingerprint, err := accountView.Record.SigningConfigurations.RootFingerprint()
 		if err != nil {
 			backend.log.WithError(err).Error("Account rootfingerprint not available")
