@@ -2733,6 +2733,7 @@
       },
       "name": {
         "button": "Continue",
+        "connect": "Connect and unlock a BitBox02 to start.",
         "hint": "Up to 30 characters, shown on your BitBox02s. The connected BitBox02 provides the first key.",
         "label": "Vault name",
         "title": "Name your vault"
@@ -2744,7 +2745,8 @@
         "connectUnnamed": "Connect and unlock the next BitBox02 to register the vault on it.",
         "description": "Each BitBox02 shows the vault name and the three keys below. Make sure they are the same on every device before you confirm.",
         "title": "Register the vault on each BitBox02"
-      }
+      },
+      "saveDraft": "Save draft"
     },
     "details": {
       "vaultFile": "Vault file. Together with two of the three BitBox02s, it is needed to recover the funds of this vault."
@@ -2784,13 +2786,6 @@
       "notRegistered": "Not registered",
       "registered": "Registered",
       "threshold": "{{threshold}} of {{numKeys}} keys are needed to spend."
-    },
-    "prompt": {
-      "addKey": "Continue setting up {{name}}? This BitBox02 can be added as key {{number}}.",
-      "continue": "Continue",
-      "later": "Not now",
-      "register": "Continue setting up {{name}}? The vault can now be registered on this BitBox02.",
-      "title": "Vault setup"
     },
     "start": {
       "create": {

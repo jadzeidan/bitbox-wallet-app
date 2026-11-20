@@ -5,9 +5,11 @@ import { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from '@/utils/test-helpers';
+import * as keystoresApi from '@/api/keystores';
 import * as vaultApi from '@/api/vault';
 import { VaultCreate } from './vault-create';
 
+vi.mock('@/api/keystores');
 vi.mock('@/api/vault');
 vi.mock('@/components/confirm/Confirm', () => ({ confirmation: vi.fn() }));
 vi.mock('@/components/backbutton/backbutton', () => ({
@@ -48,9 +50,15 @@ const makeSetup = (overrides: Partial<vaultApi.TVaultSetup>): vaultApi.TVaultSet
 });
 
 // Renders the wizard with the given setup and returns a function that pushes a new setup, like
-// the backend does when the setup or the connected device changes.
-const renderWizard = async (setup: vaultApi.TVaultSetup | null) => {
+// the backend does when the setup or the connected device changes. A BitBox02 is connected unless
+// keystores is empty.
+const renderWizard = async (
+  setup: vaultApi.TVaultSetup | null,
+  keystores: keystoresApi.TKeystores = [{ type: 'hardware' }],
+) => {
   let pushSetup: (setup: vaultApi.TVaultSetup | null) => void = () => {};
+  vi.mocked(keystoresApi.getKeystores).mockResolvedValue(keystores);
+  vi.mocked(keystoresApi.subscribeKeystores).mockReturnValue(() => {});
   vi.mocked(vaultApi.getVaultSetup).mockResolvedValue(setup);
   vi.mocked(vaultApi.subscribeVaultSetup).mockImplementation(cb => {
     pushSetup = cb;
@@ -82,10 +90,36 @@ describe('vault create wizard', () => {
     const startButton = screen.getByRole('button', { name: 'vault.create.name.button' });
     expect(startButton).toBeDisabled();
     fireEvent.input(screen.getByLabelText('vault.create.name.label'), { target: { value: 'My vault' } });
+    await waitFor(() => expect(startButton).toBeEnabled());
+    expect(screen.queryByText('vault.create.name.connect')).toBeNull();
     fireEvent.click(startButton);
 
     await waitFor(() => expect(vaultApi.startVaultSetup).toHaveBeenCalledWith('My vault'));
     expect(await screen.findByText('vault.error.vaultNameInvalid')).toBeInTheDocument();
+  });
+
+  // The first key comes from the connected BitBox02, so a setup can't be started without one. The
+  // user is told to connect a device.
+  it('asks to connect a device before starting', async () => {
+    await renderWizard(null, []);
+
+    fireEvent.input(screen.getByLabelText('vault.create.name.label'), { target: { value: 'My vault' } });
+    expect(await screen.findByText('vault.create.name.connect')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'vault.create.name.button' })).toBeDisabled();
+  });
+
+  // Saving the draft leaves the wizard without discarding the setup, which the backend keeps. It
+  // is offered in every step in which devices are swapped, also with no device connected.
+  it('leaves the wizard and keeps the setup when saving the draft', async () => {
+    const pushSetup = await renderWizard(makeSetup({ keys: [key(1)] }), []);
+    expect(screen.getByText('vault.create.collectKeys.connectAny')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'vault.create.saveDraft' })).toBeInTheDocument();
+
+    await pushSetup(makeSetup({ step: 'register', keys: [key(1), key(2), key(3)] }));
+    fireEvent.click(screen.getByRole('button', { name: 'vault.create.saveDraft' }));
+
+    await waitFor(() => expect(window.location.hash).toBe('#/'));
+    expect(vaultApi.discardVaultSetup).not.toHaveBeenCalled();
   });
 
   // While keys are collected, a device that has not contributed a key can be added. A device that

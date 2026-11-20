@@ -40,9 +40,11 @@ export const AppNavigation = () => {
       currentURL.startsWith('/account-summary')
       || currentURL === '/accounts/all'
     );
+    // Creating a vault continues while BitBox02s are swapped, with no account loaded in between.
+    const inVaultSetup = currentURL.startsWith('/add-account/vault/create');
     const requiresRegularAccount = (
       currentURL.startsWith('/account-summary')
-      || currentURL.startsWith('/add-account')
+      || (currentURL.startsWith('/add-account') && !inVaultSetup)
       || currentURL.startsWith('/settings/manage-accounts')
       || currentURL.startsWith('/accounts/')
     );

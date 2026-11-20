@@ -4,6 +4,7 @@ import { FormEvent, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation } from 'wouter';
 import type { AccountCode } from '@/api/account';
+import { getKeystores, subscribeKeystores } from '@/api/keystores';
 import {
   addVaultSetupKey,
   discardVaultSetup,
@@ -139,6 +140,7 @@ export const VaultCreate = () => {
   const { t } = useTranslation();
   const [, navigate] = useLocation();
   const setup = useSync(getVaultSetup, subscribeVaultSetup);
+  const keystores = useSync(getKeystores, subscribeKeystores);
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string>();
@@ -218,6 +220,8 @@ export const VaultCreate = () => {
   );
 
   if (setup === null) {
+    // The first key comes from the connected BitBox02.
+    const keystoreConnected = keystores !== undefined && keystores.length > 0;
     return (
       <VaultView
         title={t('vault.create.name.title')}
@@ -225,7 +229,7 @@ export const VaultCreate = () => {
           <>
             <Button
               primary
-              disabled={busy || name.trim() === ''}
+              disabled={busy || name.trim() === '' || !keystoreConnected}
               onClick={start}>
               {t('vault.create.name.button')}
             </Button>
@@ -243,14 +247,23 @@ export const VaultCreate = () => {
             value={name} />
         </form>
         <p className={styles.description}>{t('vault.create.name.hint')}</p>
+        {keystores !== undefined && !keystoreConnected && (
+          <Message type="info">{t('vault.create.name.connect')}</Message>
+        )}
       </VaultView>
     );
   }
 
-  const discardButton = (
-    <Button transparent disabled={busy} onClick={discard}>
-      {t('vault.create.discard.button')}
-    </Button>
+  // The backend keeps the progress, so leaving the wizard is enough to continue later.
+  const setupButtons = (
+    <>
+      <Button secondary disabled={busy} onClick={() => navigate('/')}>
+        {t('vault.create.saveDraft')}
+      </Button>
+      <Button transparent disabled={busy} onClick={discard}>
+        {t('vault.create.discard.button')}
+      </Button>
+    </>
   );
 
   switch (setup.step) {
@@ -258,7 +271,7 @@ export const VaultCreate = () => {
     return (
       <VaultView
         title={t('vault.create.collectKeys.title', { name: setup.name })}
-        buttons={<>{discardButton}{backButton}</>}>
+        buttons={setupButtons}>
         {error}
         <CollectKeys setup={setup} busy={busy} run={run} />
       </VaultView>
@@ -267,7 +280,7 @@ export const VaultCreate = () => {
     return (
       <VaultView
         title={t('vault.create.register.title')}
-        buttons={<>{discardButton}{backButton}</>}>
+        buttons={setupButtons}>
         {error}
         <Register setup={setup} busy={busy} run={run} />
       </VaultView>
