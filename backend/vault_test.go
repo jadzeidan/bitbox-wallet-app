@@ -6,15 +6,23 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/accounts"
 	accountsTypes "github.com/BitBoxSwiss/bitbox-wallet-app/backend/accounts/types"
+	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/coins/btc"
+	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/coins/btc/addresses"
+	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/coins/btc/blockchain"
+	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/coins/btc/types"
 	coinpkg "github.com/BitBoxSwiss/bitbox-wallet-app/backend/coins/coin"
+	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/coins/eth"
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/keystore"
 	keystoremock "github.com/BitBoxSwiss/bitbox-wallet-app/backend/keystore/mocks"
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/keystore/software"
+	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/rates"
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/signing"
 	"github.com/BitBoxSwiss/bitbox-wallet-app/util/errp"
 	"github.com/btcsuite/btcd/btcutil/v2/hdkeychain"
 	"github.com/btcsuite/btcd/chaincfg/v2"
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 )
 
@@ -492,4 +500,68 @@ func TestVaultAccountCode(t *testing.T) {
 	otherCoin, err := vaultAccountCode(coinpkg.CodeTBTC, multisig(2, setup.keys[:]...))
 	require.NoError(t, err)
 	require.NotEqual(t, code, otherCoin)
+}
+
+// On the portfolio, the balance of the vault accounts is summed up separately. It is not part of
+// the balance of the keystore the vault is presented under, but it is part of the overall total of
+// its coin.
+func TestAccountsBalanceSummaryVaults(t *testing.T) {
+	withBalances := func(b *Backend) {
+		b.makeBtcAccount = func(config *accounts.AccountConfig, coin *btc.Coin, gapLimits *types.GapLimits, getAddress func(coinpkg.Code, blockchain.ScriptHashHex) (*addresses.AccountAddress, error), log *logrus.Entry) accounts.Interface {
+			accountMock := MockBtcAccount(t, config, coin, gapLimits, log)
+			accountMock.BalanceFunc = func() (*accounts.Balance, error) {
+				return accounts.NewBalance(coinpkg.NewAmountFromInt64(1e8), coinpkg.NewAmountFromInt64(0)), nil
+			}
+			return accountMock
+		}
+		b.makeEthAccount = func(config *accounts.AccountConfig, coin *eth.Coin, log *logrus.Entry) accounts.Interface {
+			accountMock := MockEthAccount(config, coin, log)
+			accountMock.BalanceFunc = func() (*accounts.Balance, error) {
+				return accounts.NewBalance(coinpkg.NewAmountFromInt64(1e18), coinpkg.NewAmountFromInt64(0)), nil
+			}
+			return accountMock
+		}
+	}
+
+	// Without vault accounts there is no vaults balance.
+	withoutVault := newVaultTestSetup(t)
+	withBalances(withoutVault.backend)
+	withoutVault.backend.registerKeystore(withoutVault.keystores[0])
+	// The rates are mocked after all changes to the accounts, as these fetch new rates.
+	withoutVault.backend.ratesUpdater = rates.MockRateUpdater()
+	defer withoutVault.backend.ratesUpdater.Stop()
+	summary, err := withoutVault.backend.AccountsBalanceSummary()
+	require.NoError(t, err)
+	require.Nil(t, summary.VaultsBalance)
+	require.Len(t, summary.KeystoresBalance, 1)
+
+	setup := newVaultTestSetup(t)
+	b := setup.backend
+	withBalances(b)
+	b.registerKeystore(setup.keystores[0])
+	_, err = b.AddVault(setup.descriptor, "My vault", setup.keystores[0])
+	require.NoError(t, err)
+	b.ratesUpdater = rates.MockRateUpdater()
+	defer b.ratesUpdater.Stop()
+
+	summary, err = b.AccountsBalanceSummary()
+	require.NoError(t, err)
+	keystoreBalance, ok := summary.KeystoresBalance["a1a1a1a1"]
+	require.True(t, ok)
+	require.Len(t, summary.KeystoresBalance, 1)
+	// The keystore total covers its regular Bitcoin account only.
+	require.Equal(t, "1.00000000", keystoreBalance.CoinsBalance[coinpkg.CodeBTC].Amount)
+	require.NotNil(t, summary.VaultsBalance)
+	require.Equal(t, "1.00000000", summary.VaultsBalance.CoinsBalance[coinpkg.CodeBTC].Amount)
+	require.Equal(t, "21.00", summary.VaultsBalance.Total)
+	require.Len(t, summary.VaultsBalance.CoinsBalance, 1)
+	// The overall Bitcoin total includes the vault.
+	foundBitcoinTotal := false
+	for _, coinBalance := range summary.CoinsTotalBalance {
+		if coinBalance.CoinCode == coinpkg.CodeBTC {
+			foundBitcoinTotal = true
+			require.Equal(t, "2.00000000", coinBalance.FormattedAmount.Amount)
+		}
+	}
+	require.True(t, foundBitcoinTotal)
 }

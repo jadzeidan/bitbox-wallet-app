@@ -316,6 +316,41 @@ func (backend *Backend) AccountsFiatAndCoinBalance(accounts AccountViews, fiatUn
 	return keystoreBalance, keystoreCoinsBalance, nil
 }
 
+// accountsBalance returns the total balance across coins of a list of accounts.
+func (backend *Backend) accountsBalance(
+	accountViews AccountViews,
+	fiatUnit string,
+) (*KeystoreBalance, error) {
+	totalBalance, coinsBalance, err := backend.AccountsFiatAndCoinBalance(accountViews, fiatUnit)
+	if err != nil {
+		return nil, err
+	}
+
+	coinsAmount := AmountsByCoin{}
+	for coinCode, coinBalance := range coinsBalance {
+		coinAmount := coinpkg.NewAmount(coinBalance)
+		coin, err := backend.Coin(coinCode)
+		if err != nil {
+			return nil, err
+		}
+		coinsAmount[coinCode] = coinpkg.FormattedAmountWithConversions{
+			Amount: coin.FormatAmount(coinAmount, false),
+			Unit:   coin.GetFormatUnit(false),
+			Conversions: coinpkg.Conversions(
+				coinAmount,
+				coin,
+				false,
+				backend.ratesUpdater),
+		}
+	}
+
+	return &KeystoreBalance{
+		FiatUnit:     fiatUnit,
+		Total:        coinpkg.FormatAsCurrency(totalBalance, fiatUnit),
+		CoinsBalance: coinsAmount,
+	}, nil
+}
+
 // keystoresBalance returns a map of accounts' total balances across coins, grouped by keystore.
 func (backend *Backend) keystoresBalance(
 	accountViews AccountViews,
@@ -328,50 +363,53 @@ func (backend *Backend) keystoresBalance(
 		return nil, err
 	}
 	for rootFingerprint, accountList := range accountsByKeystore {
-		keystoreTotalBalance, keystoreCoinsBalance, err := backend.AccountsFiatAndCoinBalance(accountList, fiatUnit)
+		keystoreBalance, err := backend.accountsBalance(accountList, fiatUnit)
 		if err != nil {
 			return nil, err
 		}
-
-		keystoreCoinsAmount := AmountsByCoin{}
-		for coinCode, coinBalance := range keystoreCoinsBalance {
-			coinAmount := coinpkg.NewAmount(coinBalance)
-			coin, err := backend.Coin(coinCode)
-			if err != nil {
-				return nil, err
-			}
-			keystoreCoinsAmount[coinCode] = coinpkg.FormattedAmountWithConversions{
-				Amount: coin.FormatAmount(coinAmount, false),
-				Unit:   coin.GetFormatUnit(false),
-				Conversions: coinpkg.Conversions(
-					coinAmount,
-					coin,
-					false,
-					backend.ratesUpdater),
-			}
-		}
-
-		keystoreBalanceMap[rootFingerprint] = KeystoreBalance{
-			FiatUnit:     fiatUnit,
-			Total:        coinpkg.FormatAsCurrency(keystoreTotalBalance, fiatUnit),
-			CoinsBalance: keystoreCoinsAmount,
-		}
+		keystoreBalanceMap[rootFingerprint] = *keystoreBalance
 	}
 	return keystoreBalanceMap, nil
 }
 
-// AccountsBalanceSummary holds the total balance for each coin and of each keystore.
-type AccountsBalanceSummary struct {
-	KeystoresBalance  map[string]KeystoreBalance `json:"keystoresBalance"`
-	CoinsTotalBalance []coinFormattedAmount      `json:"coinsTotalBalance"`
+// splitVaultAccountViews separates the vault accounts, which are not owned by a single keystore,
+// from all other accounts.
+func splitVaultAccountViews(accountViews AccountViews) (regular AccountViews, vaults AccountViews) {
+	for _, accountView := range accountViews {
+		if accountView.Record.IsMultisig() {
+			vaults = append(vaults, accountView)
+		} else {
+			regular = append(regular, accountView)
+		}
+	}
+	return regular, vaults
 }
 
-// AccountsBalanceSummary returns the total balance for each coin and of each keystore.
+// AccountsBalanceSummary holds the total balance for each coin, of each keystore and of the vaults.
+type AccountsBalanceSummary struct {
+	KeystoresBalance map[string]KeystoreBalance `json:"keystoresBalance"`
+	// VaultsBalance is the total balance of the vault accounts, which are not part of
+	// KeystoresBalance. It is nil if there are no vault accounts.
+	VaultsBalance     *KeystoreBalance      `json:"vaultsBalance,omitempty"`
+	CoinsTotalBalance []coinFormattedAmount `json:"coinsTotalBalance"`
+}
+
+// AccountsBalanceSummary returns the total balance for each coin, of each keystore and of the
+// vaults.
 func (backend *Backend) AccountsBalanceSummary() (*AccountsBalanceSummary, error) {
 	accountViews := backend.Accounts()
-	keystoresBalance, err := backend.keystoresBalance(accountViews)
+	regularAccountViews, vaultAccountViews := splitVaultAccountViews(accountViews)
+	keystoresBalance, err := backend.keystoresBalance(regularAccountViews)
 	if err != nil {
 		return nil, err
+	}
+	var vaultsBalance *KeystoreBalance
+	if len(vaultAccountViews) > 0 {
+		vaultsBalance, err = backend.accountsBalance(
+			vaultAccountViews, backend.Config().AppConfig().Backend.MainFiat)
+		if err != nil {
+			return nil, err
+		}
 	}
 	coinsTotalBalance, err := backend.coinsTotalBalance(accountViews)
 	if err != nil {
@@ -380,6 +418,7 @@ func (backend *Backend) AccountsBalanceSummary() (*AccountsBalanceSummary, error
 
 	return &AccountsBalanceSummary{
 		KeystoresBalance:  keystoresBalance,
+		VaultsBalance:     vaultsBalance,
 		CoinsTotalBalance: coinsTotalBalance,
 	}, nil
 }
