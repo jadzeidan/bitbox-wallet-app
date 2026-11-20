@@ -53,6 +53,16 @@ func sigScriptWitnessSize(configuration *signing.Configuration) (int, int) {
 	case signing.ScriptTypeP2TR:
 		// Taproot key spend: <64 byte sig>
 		return 0, wire.VarIntSerializeSize(1) + wire.VarIntSerializeSize(64) + 64
+	case signing.ScriptTypeP2WSH:
+		// Multisig: <empty item> <threshold signatures> <witness script>. The empty item is
+		// consumed by OP_CHECKMULTISIG in addition to the signatures.
+		multisig := configuration.BitcoinMultisig
+		// OP_k, one push of a compressed pubkey per key, OP_n, OP_CHECKMULTISIG.
+		witnessScriptSize := 1 + len(multisig.Keys)*(1+pubkeySize) + 1 + 1
+		return 0, wire.VarIntSerializeSize(uint64(multisig.Threshold+2)) +
+			wire.VarIntSerializeSize(0) +
+			multisig.Threshold*(wire.VarIntSerializeSize(signatureSize)+signatureSize) +
+			wire.VarIntSerializeSize(uint64(witnessScriptSize)) + witnessScriptSize
 	default:
 		panic("unknown address type")
 	}

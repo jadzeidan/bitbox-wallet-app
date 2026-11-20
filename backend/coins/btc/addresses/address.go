@@ -12,6 +12,7 @@ import (
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/coins/btc/types"
 	ourbtcutil "github.com/BitBoxSwiss/bitbox-wallet-app/backend/coins/btc/util"
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/signing"
+	"github.com/BitBoxSwiss/bitbox-wallet-app/util/errp"
 	addresspkg "github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -108,6 +109,47 @@ func newMultisigAccountAddress(
 		WitnessScript:        witnessScript,
 		log:                  log,
 	}
+}
+
+// MultisigKeyDerivation is the key one cosigner contributes to a multisig address.
+type MultisigKeyDerivation struct {
+	// RootFingerprint identifies the keystore of the cosigner.
+	RootFingerprint []byte
+	// AbsoluteKeypath is the keypath of the public key.
+	AbsoluteKeypath signing.AbsoluteKeypath
+	PublicKey       *btcec.PublicKey
+}
+
+// MultisigKeyDerivations returns the key every cosigner contributes to this multisig address, in
+// the order of the keys of the account configuration. A keystore needs these to find its key when
+// signing.
+func (address *AccountAddress) MultisigKeyDerivations() ([]MultisigKeyDerivation, error) {
+	multisig := address.AccountConfiguration.BitcoinMultisig
+	if multisig == nil {
+		return nil, errp.New("not a multisig address")
+	}
+	relativeKeypath := signing.NewEmptyRelativeKeypath().
+		Child(address.Derivation.SimpleChainIndex(), signing.NonHardened).
+		Child(address.Derivation.AddressIndex, signing.NonHardened)
+	result := make([]MultisigKeyDerivation, len(multisig.Keys))
+	for index, key := range multisig.Keys {
+		derivedXpub, err := relativeKeypath.Derive(key.ExtendedPublicKey)
+		if err != nil {
+			return nil, err
+		}
+		publicKey, err := derivedXpub.ECPubKey()
+		if err != nil {
+			return nil, errp.WithStack(err)
+		}
+		result[index] = MultisigKeyDerivation{
+			RootFingerprint: key.RootFingerprint,
+			AbsoluteKeypath: key.AbsoluteKeypath.
+				Child(address.Derivation.SimpleChainIndex(), signing.NonHardened).
+				Child(address.Derivation.AddressIndex, signing.NonHardened),
+			PublicKey: publicKey,
+		}
+	}
+	return result, nil
 }
 
 // NewAccountAddress creates a new account address.

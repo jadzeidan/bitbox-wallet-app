@@ -35,6 +35,9 @@ type ProposedTransaction struct {
 //   - Previous transactions (PSBT_IN_NON_WITNESS_UTXO) are *not* included here,
 //     but is currently left to the keystore to populate if needed.
 func (p *ProposedTransaction) Update() error {
+	if p.AccountSigningConfigurations.Multisig() != nil {
+		return p.updateMultisig()
+	}
 	txProposal := p.TXProposal
 	rootFingerprint, err := p.AccountSigningConfigurations.RootFingerprint()
 	if err != nil {
@@ -127,6 +130,79 @@ func (p *ProposedTransaction) Update() error {
 				}
 			default:
 				return errp.Newf("unrecognized script type %s", scriptType)
+			}
+		}
+	}
+	return nil
+}
+
+// updateMultisig populates the PSBT of a transaction that spends from a multisig account. Every
+// input, and every output that pays back to the account, gets its witness script and the key of
+// every cosigner. This lets each keystore find its own key, and lets it recognize the change.
+//
+// Outputs to other accounts of a cosigner's keystore get no key info: a keystore confirms them like
+// external outputs when signing for a multisig account.
+func (p *ProposedTransaction) updateMultisig() error {
+	txProposal := p.TXProposal
+	updater, err := psbt.NewUpdater(txProposal.Psbt)
+	if err != nil {
+		return err
+	}
+
+	for index, txIn := range txProposal.Psbt.UnsignedTx.TxIn {
+		prevOut, ok := txProposal.PreviousOutputs[txIn.PreviousOutPoint]
+		if !ok {
+			return errp.New("There needs to be exactly one output being spent per input.")
+		}
+		inputAddress := prevOut.Address
+		if inputAddress == nil || !inputAddress.AccountConfiguration.IsMultisig() {
+			return errp.New("all inputs must belong to the multisig account")
+		}
+		if err := updater.AddInWitnessUtxo(prevOut.TxOut, index); err != nil {
+			return err
+		}
+		if err := updater.AddInWitnessScript(inputAddress.WitnessScript, index); err != nil {
+			return err
+		}
+		derivations, err := inputAddress.MultisigKeyDerivations()
+		if err != nil {
+			return err
+		}
+		for _, derivation := range derivations {
+			if err := updater.AddInBip32Derivation(
+				binary.LittleEndian.Uint32(derivation.RootFingerprint),
+				derivation.AbsoluteKeypath.ToUInt32(),
+				derivation.PublicKey.SerializeCompressed(),
+				index); err != nil && err != psbt.ErrDuplicateKey {
+				// The key info is already present if the same PSBT is updated again.
+				return err
+			}
+		}
+	}
+
+	for index, txOut := range txProposal.Psbt.UnsignedTx.TxOut {
+		outputAddress, err := p.GetKeystoreAddress(
+			txProposal.Coin.Code(), addresses.NewAddressID(txOut.PkScript))
+		if err != nil {
+			return errp.Newf("failed to get address: %v", err)
+		}
+		if outputAddress == nil || !outputAddress.AccountConfiguration.IsMultisig() {
+			continue
+		}
+		if err := updater.AddOutWitnessScript(outputAddress.WitnessScript, index); err != nil {
+			return err
+		}
+		derivations, err := outputAddress.MultisigKeyDerivations()
+		if err != nil {
+			return err
+		}
+		for _, derivation := range derivations {
+			if err := updater.AddOutBip32Derivation(
+				binary.LittleEndian.Uint32(derivation.RootFingerprint),
+				derivation.AbsoluteKeypath.ToUInt32(),
+				derivation.PublicKey.SerializeCompressed(),
+				index); err != nil && err != psbt.ErrDuplicateKey {
+				return err
 			}
 		}
 	}
