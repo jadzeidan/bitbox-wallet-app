@@ -109,10 +109,35 @@ type Keystore struct {
 	LastConnected time.Time `json:"lastConnected"`
 }
 
+// VaultSetup is the draft of a multisig account that is being created. Its keys are collected from
+// keystores that are connected one after the other, and the account is then registered on each of
+// these keystores.
+type VaultSetup struct {
+	CoinCode coin.Code `json:"coinCode"`
+	Name     string    `json:"name"`
+	// Keys holds the keys collected so far.
+	Keys []signing.KeyInfo `json:"keys"`
+	// Registered holds the root fingerprints of the keystores on which the account is registered.
+	Registered []jsonp.HexBytes `json:"registered"`
+}
+
+// IsRegistered returns true if the account is registered on the keystore with the given root
+// fingerprint.
+func (setup *VaultSetup) IsRegistered(rootFingerprint []byte) bool {
+	for _, registered := range setup.Registered {
+		if bytes.Equal(registered, rootFingerprint) {
+			return true
+		}
+	}
+	return false
+}
+
 // AccountsConfig persists the list of accounts added to the app.
 type AccountsConfig struct {
 	Accounts  []*Account  `json:"accounts"`
 	Keystores []*Keystore `json:"keystores"`
+	// VaultSetup is the vault that is being created, or nil if none is.
+	VaultSetup *VaultSetup `json:"vaultSetup,omitempty"`
 }
 
 // Account field ownership:
@@ -164,6 +189,12 @@ func cloneAccountsConfig(accountsConfig AccountsConfig) AccountsConfig {
 	}
 	for index, keystore := range accountsConfig.Keystores {
 		cloned.Keystores[index] = cloneKeystore(keystore)
+	}
+	if accountsConfig.VaultSetup != nil {
+		vaultSetup := *accountsConfig.VaultSetup
+		vaultSetup.Keys = slices.Clone(accountsConfig.VaultSetup.Keys)
+		vaultSetup.Registered = slices.Clone(accountsConfig.VaultSetup.Registered)
+		cloned.VaultSetup = &vaultSetup
 	}
 	return cloned
 }

@@ -81,15 +81,7 @@ func (backend *Backend) vaultCoin() (*btc.Coin, error) {
 	case backend.Testing():
 		coinCode = coinpkg.CodeTBTC
 	}
-	coin, err := backend.Coin(coinCode)
-	if err != nil {
-		return nil, err
-	}
-	btcCoin, ok := coin.(*btc.Coin)
-	if !ok {
-		return nil, errp.Newf("unexpected coin type for %s", coinCode)
-	}
-	return btcCoin, nil
+	return backend.btcCoin(coinCode)
 }
 
 // validateVaultName returns the name without surrounding whitespace. It must be 1 to 30 printable
@@ -352,13 +344,9 @@ func (backend *Backend) RegisterVault(accountCode accountsTypes.Code) error {
 	if multisig == nil {
 		return errp.Newf("Account %s is not a vault", accountCode)
 	}
-	coin, err := backend.Coin(account.CoinCode)
+	btcCoin, err := backend.btcCoin(account.CoinCode)
 	if err != nil {
 		return err
-	}
-	btcCoin, ok := coin.(*btc.Coin)
-	if !ok {
-		return errp.Newf("unexpected coin type for %s", account.CoinCode)
 	}
 	name, err := validateVaultName(account.Name)
 	if err != nil {

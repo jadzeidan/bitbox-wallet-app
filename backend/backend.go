@@ -1035,6 +1035,9 @@ func (backend *Backend) registerKeystore(ks keystore.Keystore) {
 
 	backend.connectKeystore.onConnect(backend.keystore)
 
+	// The next step of creating a vault depends on the connected keystore.
+	backend.notifyVaultSetupChanged()
+
 	go backend.maybeAddHiddenUnusedAccounts()
 }
 
@@ -1084,6 +1087,9 @@ func (backend *Backend) DeregisterKeystore() {
 		backend.emitAccountsStatusChanged()
 	}
 	backend.connectKeystore.onDisconnect()
+
+	// The next step of creating a vault depends on the connected keystore.
+	backend.notifyVaultSetupChanged()
 }
 
 // Register registers the given device at this backend.

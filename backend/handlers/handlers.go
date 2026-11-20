@@ -119,6 +119,14 @@ type Backend interface {
 	VaultInfoFromDescriptor(descriptor string, keystore keystore.Keystore) (*backend.VaultInfo, error)
 	AddVault(descriptor string, name string, keystore keystore.Keystore) (accountsTypes.Code, error)
 	RegisterVault(accountCode accountsTypes.Code) error
+	VaultSupported(keystore keystore.Keystore) bool
+	VaultSetupInfo() (*backend.VaultSetupInfo, error)
+	StartVaultSetup(name string, keystore keystore.Keystore) error
+	AddVaultSetupKey(keystore keystore.Keystore) error
+	RegisterVaultSetup(keystore keystore.Keystore) error
+	FinishVaultSetup() (accountsTypes.Code, error)
+	DiscardVaultSetup() error
+	ExportVaultDescriptor(accountCode accountsTypes.Code) error
 	AOPP() backend.AOPP
 	AOPPCancel()
 	AOPPApprove()
@@ -248,6 +256,14 @@ func NewHandlers(
 	getAPIRouterNoError(apiRouter)("/vault/info", handlers.postVaultInfo).Methods("POST")
 	getAPIRouterNoError(apiRouter)("/vault/add", handlers.postAddVault).Methods("POST")
 	getAPIRouterNoError(apiRouter)("/vault/register", handlers.postRegisterVault).Methods("POST")
+	getAPIRouterNoError(apiRouter)("/vault/export", handlers.postExportVault).Methods("POST")
+	getAPIRouterNoError(apiRouter)("/vault/supported", handlers.getVaultSupported).Methods("GET")
+	getAPIRouterNoError(apiRouter)("/vault/setup", handlers.getVaultSetup).Methods("GET")
+	getAPIRouterNoError(apiRouter)("/vault/setup/start", handlers.postVaultSetupStart).Methods("POST")
+	getAPIRouterNoError(apiRouter)("/vault/setup/add-key", handlers.postVaultSetupAddKey).Methods("POST")
+	getAPIRouterNoError(apiRouter)("/vault/setup/register", handlers.postVaultSetupRegister).Methods("POST")
+	getAPIRouterNoError(apiRouter)("/vault/setup/finish", handlers.postVaultSetupFinish).Methods("POST")
+	getAPIRouterNoError(apiRouter)("/vault/setup/discard", handlers.postVaultSetupDiscard).Methods("POST")
 	getAPIRouterNoError(apiRouter)("/keystores", handlers.getKeystores).Methods("GET")
 	getAPIRouterNoError(apiRouter)("/keystore/{rootFingerprint}/features", handlers.getKeystoreFeatures).Methods("GET")
 	getAPIRouterNoError(apiRouter)("/keystore-name", handlers.getKeystoreName).Methods("GET")
@@ -836,6 +852,100 @@ func (handlers *Handlers) postRegisterVault(r *http.Request) interface{} {
 		return response{Success: false, ErrorCode: vaultErrorCode(err), ErrorMessage: err.Error()}
 	}
 	return response{Success: true}
+}
+
+// vaultResponse is the response of vault actions that return no data.
+type vaultResponse struct {
+	Success      bool               `json:"success"`
+	AccountCode  accountsTypes.Code `json:"accountCode,omitempty"`
+	ErrorMessage string             `json:"errorMessage,omitempty"`
+	ErrorCode    string             `json:"errorCode,omitempty"`
+}
+
+func (handlers *Handlers) vaultErrorResponse(err error, message string) vaultResponse {
+	handlers.log.WithError(err).Error(message)
+	return vaultResponse{Success: false, ErrorCode: vaultErrorCode(err), ErrorMessage: err.Error()}
+}
+
+func (handlers *Handlers) postExportVault(r *http.Request) interface{} {
+	var jsonBody struct {
+		AccountCode accountsTypes.Code `json:"accountCode"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&jsonBody); err != nil {
+		return vaultResponse{Success: false, ErrorMessage: err.Error()}
+	}
+	if err := handlers.backend.ExportVaultDescriptor(jsonBody.AccountCode); err != nil {
+		return handlers.vaultErrorResponse(err, "Could not export vault")
+	}
+	return vaultResponse{Success: true}
+}
+
+func (handlers *Handlers) getVaultSupported(*http.Request) interface{} {
+	keystore := handlers.backend.Keystore()
+	return keystore != nil && handlers.backend.VaultSupported(keystore)
+}
+
+func (handlers *Handlers) getVaultSetup(*http.Request) interface{} {
+	setup, err := handlers.backend.VaultSetupInfo()
+	if err != nil {
+		handlers.log.WithError(err).Error("Could not load vault setup")
+		return nil
+	}
+	return setup
+}
+
+func (handlers *Handlers) postVaultSetupStart(r *http.Request) interface{} {
+	var jsonBody struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&jsonBody); err != nil {
+		return vaultResponse{Success: false, ErrorMessage: err.Error()}
+	}
+	keystore := handlers.backend.Keystore()
+	if keystore == nil {
+		return vaultResponse{Success: false, ErrorMessage: "Keystore not found"}
+	}
+	if err := handlers.backend.StartVaultSetup(jsonBody.Name, keystore); err != nil {
+		return handlers.vaultErrorResponse(err, "Could not start vault setup")
+	}
+	return vaultResponse{Success: true}
+}
+
+func (handlers *Handlers) postVaultSetupAddKey(*http.Request) interface{} {
+	keystore := handlers.backend.Keystore()
+	if keystore == nil {
+		return vaultResponse{Success: false, ErrorMessage: "Keystore not found"}
+	}
+	if err := handlers.backend.AddVaultSetupKey(keystore); err != nil {
+		return handlers.vaultErrorResponse(err, "Could not add vault key")
+	}
+	return vaultResponse{Success: true}
+}
+
+func (handlers *Handlers) postVaultSetupRegister(*http.Request) interface{} {
+	keystore := handlers.backend.Keystore()
+	if keystore == nil {
+		return vaultResponse{Success: false, ErrorMessage: "Keystore not found"}
+	}
+	if err := handlers.backend.RegisterVaultSetup(keystore); err != nil {
+		return handlers.vaultErrorResponse(err, "Could not register vault")
+	}
+	return vaultResponse{Success: true}
+}
+
+func (handlers *Handlers) postVaultSetupFinish(*http.Request) interface{} {
+	accountCode, err := handlers.backend.FinishVaultSetup()
+	if err != nil {
+		return handlers.vaultErrorResponse(err, "Could not finish vault setup")
+	}
+	return vaultResponse{Success: true, AccountCode: accountCode}
+}
+
+func (handlers *Handlers) postVaultSetupDiscard(*http.Request) interface{} {
+	if err := handlers.backend.DiscardVaultSetup(); err != nil {
+		return handlers.vaultErrorResponse(err, "Could not discard vault setup")
+	}
+	return vaultResponse{Success: true}
 }
 
 func (handlers *Handlers) getKeystores(*http.Request) interface{} {
