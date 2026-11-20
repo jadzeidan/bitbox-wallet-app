@@ -134,6 +134,10 @@ func (account *Account) pickChangeAddress(utxos map[wire.OutPoint]maketx.UTXO) (
 func (account *Account) newTx(args *accounts.TxProposalArgs) (
 	map[wire.OutPoint]*transactions.SpendableOutput, *maketx.TxProposal, error) {
 
+	if account.Config().SigningConfigurations.Multisig() != nil {
+		return nil, nil, errp.WithStack(ErrMultisigSpendUnsupported)
+	}
+
 	account.log.Debug("Prepare new transaction")
 
 	var outputInfo *maketx.OutputInfo
@@ -245,6 +249,9 @@ func (account *Account) SendTx(txNote string) (string, error) {
 	unlock()
 	if txProposal == nil {
 		return "", errp.New("No active tx proposal")
+	}
+	if account.Config().SigningConfigurations.Multisig() != nil {
+		return "", errp.WithStack(ErrMultisigSpendUnsupported)
 	}
 
 	account.log.Info("Signing and sending transaction")

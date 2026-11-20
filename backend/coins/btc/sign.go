@@ -100,8 +100,9 @@ func (p *ProposedTransaction) Update() error {
 			return errp.Newf("failed to get address: %v", err)
 		}
 
-		// Add key info to output belonging to our keystore.
-		if outputAddress != nil {
+		// Add key info to output belonging to our keystore. Outputs paying to a multisig account
+		// are confirmed on the keystore like external outputs.
+		if outputAddress != nil && !outputAddress.AccountConfiguration.IsMultisig() {
 			scriptType := outputAddress.AccountConfiguration.ScriptType()
 			switch scriptType {
 			case signing.ScriptTypeP2WPKHP2SH, signing.ScriptTypeP2WPKH:

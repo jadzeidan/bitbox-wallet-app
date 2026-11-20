@@ -311,9 +311,15 @@ func (handlers *Handlers) getAccountInfo(*http.Request) interface{} {
 		ScriptType signing.ScriptType `json:"scriptType"`
 		Descriptor string             `json:"descriptor"`
 	}
+	type bitcoinMultisigInfo struct {
+		Threshold  int               `json:"threshold"`
+		Keys       []signing.KeyInfo `json:"keys"`
+		Descriptor string            `json:"descriptor"`
+	}
 	type signingConfigurationInfo struct {
-		BitcoinSimple  *bitcoinSimpleInfo      `json:"bitcoinSimple,omitempty"`
-		EthereumSimple *signing.EthereumSimple `json:"ethereumSimple,omitempty"`
+		BitcoinSimple   *bitcoinSimpleInfo      `json:"bitcoinSimple,omitempty"`
+		BitcoinMultisig *bitcoinMultisigInfo    `json:"bitcoinMultisig,omitempty"`
+		EthereumSimple  *signing.EthereumSimple `json:"ethereumSimple,omitempty"`
 	}
 	type accountInfo struct {
 		SigningConfigurations []signingConfigurationInfo `json:"signingConfigurations"`
@@ -350,6 +356,20 @@ func (handlers *Handlers) getAccountInfo(*http.Request) interface{} {
 			signingConfig.BitcoinSimple = &bitcoinSimpleInfo{
 				KeyInfo:    cfg.BitcoinSimple.KeyInfo,
 				ScriptType: cfg.BitcoinSimple.ScriptType,
+				Descriptor: descriptor,
+			}
+		}
+		if cfg.BitcoinMultisig != nil {
+			if btcNet == nil {
+				return response{Success: false, ErrorMessage: "bitcoin network unavailable for bitcoin signing config"}
+			}
+			descriptor, err := cfg.BitcoinMultisig.Descriptor(btcNet)
+			if err != nil {
+				return response{Success: false, ErrorMessage: err.Error()}
+			}
+			signingConfig.BitcoinMultisig = &bitcoinMultisigInfo{
+				Threshold:  cfg.BitcoinMultisig.Threshold,
+				Keys:       cfg.BitcoinMultisig.Keys,
 				Descriptor: descriptor,
 			}
 		}
@@ -765,6 +785,9 @@ func (handlers *Handlers) postVerifyAddress(r *http.Request) (interface{}, error
 	_, err := handlers.account.VerifyAddress(addressID)
 	if isFirmwareUpgradeRequired(err) {
 		return result{Success: false, ErrorCode: keystore.ErrFirmwareUpgradeRequired.Error()}, nil
+	}
+	if errp.Cause(err) == btc.ErrMultisigNotRegistered {
+		return result{Success: false, ErrorCode: string(btc.ErrMultisigNotRegistered)}, nil
 	}
 	if err != nil {
 		return result{Success: false, ErrorMessage: err.Error()}, nil

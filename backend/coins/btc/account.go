@@ -51,6 +51,17 @@ const (
 	mempoolSpaceMirror = "https://fees1.shiftcrypto.io"
 )
 
+const (
+	// ErrMultisigNotRegistered is returned when a multisig account is used with a keystore on which
+	// it has not been registered yet.
+	ErrMultisigNotRegistered errp.ErrorCode = "multisigNotRegistered"
+	// ErrMultisigSpendUnsupported is returned when attempting to spend from a multisig account.
+	ErrMultisigSpendUnsupported errp.ErrorCode = "multisigSpendUnsupported"
+	// ErrMultisigSignMessageUnsupported is returned when attempting to sign a message with an
+	// address of a multisig account.
+	ErrMultisigSignMessageUnsupported errp.ErrorCode = "multisigSignMessageUnsupported"
+)
+
 type subaccount struct {
 	signingConfiguration *signing.Configuration
 	receiveAddresses     *addresses.AddressChain
@@ -391,6 +402,37 @@ func XPubVersionForScriptType(coin *Coin, scriptType signing.ScriptType) [4]byte
 	}
 }
 
+// XPubVersionForMultisig returns the xpub version bytes used to display the keys of a P2WSH
+// multisig account: Zpub on mainnet and Vpub otherwise. These are the formats the BitBox02 shows
+// when registering a multisig account.
+func XPubVersionForMultisig(coin *Coin) [4]byte {
+	if coin.Net().Net == chaincfg.MainNetParams.Net {
+		return [4]byte{0x02, 0xaa, 0x7e, 0xd3} // Zpub
+	}
+	return [4]byte{0x02, 0x57, 0x54, 0x83} // Vpub
+}
+
+// multisigInfo returns a copy of a multisig configuration in which the keys are encoded with the
+// account-specific version bytes.
+func (account *Account) multisigInfo(multisig *signing.BitcoinMultisig) *signing.Configuration {
+	keys := make([]signing.KeyInfo, len(multisig.Keys))
+	for index, key := range multisig.Keys {
+		xpubCopy, err := hdkeychain.NewKeyFromString(key.ExtendedPublicKey.String())
+		if err != nil {
+			panic(err)
+		}
+		xpubCopy.SetNet(&chaincfg.Params{HDPublicKeyID: XPubVersionForMultisig(account.coin)})
+		keys[index] = signing.KeyInfo{
+			RootFingerprint:   key.RootFingerprint,
+			AbsoluteKeypath:   key.AbsoluteKeypath,
+			ExtendedPublicKey: xpubCopy,
+		}
+	}
+	return &signing.Configuration{
+		BitcoinMultisig: &signing.BitcoinMultisig{Threshold: multisig.Threshold, Keys: keys},
+	}
+}
+
 // Info returns account info, such as the signing configuration (xpubs). Returns nil if the account
 // is not initialized.
 func (account *Account) Info() *accounts.Info {
@@ -402,6 +444,10 @@ func (account *Account) Info() *accounts.Info {
 	isInsuredAccount := account.IsInsured()
 	var signingConfigurations []*signing.Configuration
 	for _, subacc := range account.subaccounts {
+		if multisig := subacc.signingConfiguration.BitcoinMultisig; multisig != nil {
+			signingConfigurations = append(signingConfigurations, account.multisigInfo(multisig))
+			continue
+		}
 		scriptType := subacc.signingConfiguration.ScriptType()
 		isNativeSegwit := scriptType == signing.ScriptTypeP2WPKH
 		isWrappedSegwit := scriptType == signing.ScriptTypeP2WPKHP2SH
@@ -948,6 +994,16 @@ func (account *Account) VerifyAddress(addressID string) (bool, error) {
 		return false, err
 	}
 	if canVerifyAddress {
+		if multisig := address.AccountConfiguration.BitcoinMultisig; multisig != nil {
+			// A keystore only displays addresses of multisig accounts registered on it.
+			registered, err := keystore.BTCMultisigRegistered(account.Coin(), multisig)
+			if err != nil {
+				return false, err
+			}
+			if !registered {
+				return false, errp.WithStack(ErrMultisigNotRegistered)
+			}
+		}
 		return true, keystore.VerifyAddressBTC(
 			address.AccountConfiguration,
 			address.Derivation,
@@ -1244,6 +1300,10 @@ func (account *Account) SignBTCMessageForAddress(addressID string, message strin
 
 	if len(message) == 0 {
 		return "", "", errp.New("message cannot be empty")
+	}
+
+	if account.Config().SigningConfigurations.Multisig() != nil {
+		return "", "", errp.WithStack(ErrMultisigSignMessageUnsupported)
 	}
 
 	ks, err := getSignMessageKeystore(account)
