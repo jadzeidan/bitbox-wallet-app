@@ -3,6 +3,7 @@
 package backend
 
 import (
+	"strings"
 	"testing"
 
 	coinpkg "github.com/BitBoxSwiss/bitbox-wallet-app/backend/coins/coin"
@@ -207,4 +208,57 @@ func TestExportVaultDescriptor(t *testing.T) {
 			break
 		}
 	}
+}
+
+// In testnet mode a vault is a Bitcoin testnet account: its keys are at the BIP-48 keypath of coin
+// type 1, its descriptor uses testnet extended keys, and it can be added from that descriptor.
+// A mainnet descriptor is rejected.
+func TestVaultTestnet(t *testing.T) {
+	keystores := []*vaultTestKeystore{
+		newVaultTestKeystore(t, "BitBox A", vaultFingerprint1, 1),
+		newVaultTestKeystore(t, "BitBox B", vaultFingerprint2, 2),
+		newVaultTestKeystore(t, "BitBox C", vaultFingerprint3, 3),
+	}
+
+	b := newBackend(t, testnetEnabled, regtestDisabled)
+	defer b.Close()
+	b.registerKeystore(keystores[0])
+	require.True(t, b.VaultSupported(keystores[0]))
+	require.NoError(t, b.StartVaultSetup("Testnet vault", keystores[0]))
+	require.NoError(t, b.AddVaultSetupKey(keystores[1]))
+	require.NoError(t, b.AddVaultSetupKey(keystores[2]))
+	info := mustVaultSetupInfo(t, b)
+	for _, key := range info.Keys {
+		require.Equal(t, "m/48'/1'/0'/2'", key.Keypath)
+		require.True(t, strings.HasPrefix(key.Xpub, "Vpub"))
+	}
+	for _, ks := range keystores {
+		require.NoError(t, b.RegisterVaultSetup(ks))
+		require.Equal(t, coinpkg.CodeTBTC, ks.RegisterBTCMultisigCalls()[0].CoinInstance.Code())
+	}
+
+	info = mustVaultSetupInfo(t, b)
+	require.Equal(t, VaultSetupStepBackup, info.Step)
+	require.True(t, strings.HasPrefix(info.Descriptor, "wsh(sortedmulti(2,[a1a1a1a1/48'/1'/0'/2']tpub"))
+	require.True(t, strings.HasSuffix(string(info.AccountCode), "-tbtc"))
+	view := lookupAccountView(t, b, info.AccountCode)
+	require.NotNil(t, view)
+	require.Equal(t, coinpkg.CodeTBTC, view.Record.CoinCode)
+	descriptor := info.Descriptor
+
+	// The same vault is added from its descriptor in another installation of the app.
+	other := newBackend(t, testnetEnabled, regtestDisabled)
+	defer other.Close()
+	other.registerKeystore(keystores[1])
+	accountCode, err := other.AddVault(descriptor, "Testnet vault", keystores[1])
+	require.NoError(t, err)
+	require.Equal(t, info.AccountCode, accountCode)
+
+	// A mainnet vault can't be added in testnet mode, and a testnet vault not in mainnet mode.
+	mainnetSetup := newVaultTestSetup(t)
+	_, err = other.AddVault(mainnetSetup.descriptor, "Mainnet vault", keystores[1])
+	require.Equal(t, errVaultDescriptorInvalid, errp.Cause(err))
+	mainnetSetup.backend.registerKeystore(keystores[1])
+	_, err = mainnetSetup.backend.AddVault(descriptor, "Testnet vault", keystores[1])
+	require.Equal(t, errVaultDescriptorInvalid, errp.Cause(err))
 }
