@@ -78,6 +78,36 @@ const (
 	descriptorChecksumCharset = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
 )
 
+// descriptorKeyExpression returns the key expression [fingerprint/path]xpub-or-tpub/<0;1>/* of a
+// key, with the extended public key encoded for the given network.
+func descriptorKeyExpression(keyInfo KeyInfo, net *chaincfg.Params) (string, error) {
+	if keyInfo.ExtendedPublicKey == nil {
+		return "", errp.New("extended public key is nil")
+	}
+	if keyInfo.ExtendedPublicKey.IsPrivate() {
+		return "", errp.New("extended key must be public")
+	}
+	if len(keyInfo.RootFingerprint) != 4 {
+		return "", errp.Newf(
+			"root fingerprint must be 4 bytes, got %d",
+			len(keyInfo.RootFingerprint),
+		)
+	}
+
+	xpub, err := hdkeychain.NewKeyFromString(keyInfo.ExtendedPublicKey.String())
+	if err != nil {
+		return "", errp.Wrap(err, "could not clone extended public key")
+	}
+	xpub.SetNet(net)
+
+	originPath := strings.TrimPrefix(keyInfo.AbsoluteKeypath.Encode(), "m/")
+	keyOrigin := hex.EncodeToString(keyInfo.RootFingerprint)
+	if originPath != "" {
+		keyOrigin += "/" + originPath
+	}
+	return fmt.Sprintf("[%s]%s/<0;1>/*", keyOrigin, xpub.String()), nil
+}
+
 // Descriptor returns a descriptor for this configuration in the form
 // SCRIPT([fingerprint/path]xpub-or-tpub/<0;1>/*)#checksum.
 func (configuration *BitcoinSimple) Descriptor(net *chaincfg.Params) (string, error) {
@@ -87,31 +117,10 @@ func (configuration *BitcoinSimple) Descriptor(net *chaincfg.Params) (string, er
 	if net == nil {
 		return "", errp.New("network is nil")
 	}
-	if configuration.KeyInfo.ExtendedPublicKey == nil {
-		return "", errp.New("extended public key is nil")
-	}
-	if configuration.KeyInfo.ExtendedPublicKey.IsPrivate() {
-		return "", errp.New("extended key must be public")
-	}
-	if len(configuration.KeyInfo.RootFingerprint) != 4 {
-		return "", errp.Newf(
-			"root fingerprint must be 4 bytes, got %d",
-			len(configuration.KeyInfo.RootFingerprint),
-		)
-	}
-
-	xpub, err := hdkeychain.NewKeyFromString(configuration.KeyInfo.ExtendedPublicKey.String())
+	keyExpression, err := descriptorKeyExpression(configuration.KeyInfo, net)
 	if err != nil {
-		return "", errp.Wrap(err, "could not clone extended public key")
+		return "", err
 	}
-	xpub.SetNet(net)
-
-	originPath := strings.TrimPrefix(configuration.KeyInfo.AbsoluteKeypath.Encode(), "m/")
-	keyOrigin := hex.EncodeToString(configuration.KeyInfo.RootFingerprint)
-	if originPath != "" {
-		keyOrigin += "/" + originPath
-	}
-	keyExpression := fmt.Sprintf("[%s]%s/<0;1>/*", keyOrigin, xpub.String())
 
 	var descriptor string
 	switch configuration.ScriptType {
@@ -208,8 +217,9 @@ type EthereumSimple struct {
 type Configuration struct {
 	// Poor man's union type: only one of the below can be non-nil.
 
-	BitcoinSimple  *BitcoinSimple  `json:"bitcoinSimple,omitempty"`
-	EthereumSimple *EthereumSimple `json:"ethereumSimple,omitempty"`
+	BitcoinSimple   *BitcoinSimple   `json:"bitcoinSimple,omitempty"`
+	BitcoinMultisig *BitcoinMultisig `json:"bitcoinMultisig,omitempty"`
+	EthereumSimple  *EthereumSimple  `json:"ethereumSimple,omitempty"`
 }
 
 // NewBitcoinConfiguration creates a new configuration.
@@ -254,21 +264,38 @@ func NewEthereumConfiguration(
 	}
 }
 
-// ScriptType returns the configuration's keypath.
+// ScriptType returns the configuration's script type. Must only be called on Bitcoin
+// configurations.
 func (configuration *Configuration) ScriptType() ScriptType {
+	if configuration.BitcoinMultisig != nil {
+		return ScriptTypeP2WSH
+	}
 	return configuration.BitcoinSimple.ScriptType
 }
 
-// AbsoluteKeypath returns the configuration's keypath.
+// IsMultisig returns true if the configuration requires the signatures of multiple keys.
+func (configuration *Configuration) IsMultisig() bool {
+	return configuration.BitcoinMultisig != nil
+}
+
+// AbsoluteKeypath returns the configuration's keypath. Must not be called on multisig
+// configurations, which have one keypath per key.
 func (configuration *Configuration) AbsoluteKeypath() AbsoluteKeypath {
+	if configuration.BitcoinMultisig != nil {
+		panic("a multisig configuration does not have a single keypath")
+	}
 	if configuration.BitcoinSimple != nil {
 		return configuration.BitcoinSimple.KeyInfo.AbsoluteKeypath
 	}
 	return configuration.EthereumSimple.KeyInfo.AbsoluteKeypath
 }
 
-// ExtendedPublicKey returns the configuration's extended public key.
+// ExtendedPublicKey returns the configuration's extended public key. Must not be called on
+// multisig configurations, which have one extended public key per key.
 func (configuration *Configuration) ExtendedPublicKey() *hdkeychain.ExtendedKey {
+	if configuration.BitcoinMultisig != nil {
+		panic("a multisig configuration does not have a single extended public key")
+	}
 	if configuration.BitcoinSimple != nil {
 		return configuration.BitcoinSimple.KeyInfo.ExtendedPublicKey
 	}
@@ -280,7 +307,11 @@ func (configuration *Configuration) ExtendedPublicKey() *hdkeychain.ExtendedKey 
 // m/purpose'/coin'/account' for Bitcoin-based coins.
 // m/44'/coin'/0'/0/account for Ethereum.
 // For invalid keypaths, zero is returned for the account number, along with an error.
+// Multisig configurations are not BIP44 accounts and always return an error.
 func (configuration *Configuration) AccountNumber() (uint16, error) {
+	if configuration.BitcoinMultisig != nil {
+		return 0, errp.New("multisig configurations do not have a BIP44 account number")
+	}
 	if configuration.BitcoinSimple != nil {
 		keypath := configuration.BitcoinSimple.KeyInfo.AbsoluteKeypath.ToUInt32()
 		if len(keypath) != 3 || keypath[2] < hdkeychain.HardenedKeyStart {
@@ -313,12 +344,26 @@ func (configuration *Configuration) String() string {
 		return fmt.Sprintf("bitcoinSimple;scriptType=%s;%s",
 			configuration.BitcoinSimple.ScriptType, configuration.BitcoinSimple.KeyInfo)
 	}
+	if configuration.BitcoinMultisig != nil {
+		return fmt.Sprintf("bitcoinMultisig;%s", configuration.BitcoinMultisig)
+	}
 	return fmt.Sprintf("ethereumSimple;%s", configuration.EthereumSimple.KeyInfo)
 }
 
-// Configurations is an unordered collection of configurations. All entries must have the same root
-// fingerprint.
+// Configurations is an unordered collection of configurations. All single-signature entries must
+// have the same root fingerprint. A multisig configuration is always the only entry.
 type Configurations []*Configuration
+
+// Multisig returns the multisig configuration if these are the configurations of a multisig
+// account, and nil otherwise.
+func (configs Configurations) Multisig() *BitcoinMultisig {
+	for _, config := range configs {
+		if config.BitcoinMultisig != nil {
+			return config.BitcoinMultisig
+		}
+	}
+	return nil
+}
 
 // AccountNumber returns the first config's account number. It assumes all configurations have the
 // same account number.
@@ -331,9 +376,13 @@ func (configs Configurations) AccountNumber() (uint16, error) {
 
 // RootFingerprint gets the fingerprint of the first config (assuming that all configurations have
 // the same rootFingerprint). Returns an error if the list has no entries or does not contain a
-// known config.
+// known config. Multisig configurations involve multiple keystores and return an error, use
+// RootFingerprints() instead.
 func (configs Configurations) RootFingerprint() ([]byte, error) {
 	for _, config := range configs {
+		if config.BitcoinMultisig != nil {
+			return nil, errp.New("multisig configurations have more than one root fingerprint")
+		}
 		if config.BitcoinSimple != nil {
 			return config.BitcoinSimple.KeyInfo.RootFingerprint, nil
 		}
@@ -344,9 +393,39 @@ func (configs Configurations) RootFingerprint() ([]byte, error) {
 	return nil, errp.New("Could not retrieve fingerprint from signing configurations")
 }
 
+// RootFingerprints returns the distinct root fingerprints of all keystores that take part in the
+// configurations: one for single-signature accounts, one per key for multisig accounts.
+func (configs Configurations) RootFingerprints() [][]byte {
+	var result [][]byte
+	add := func(rootFingerprint []byte) {
+		for _, existing := range result {
+			if bytes.Equal(existing, rootFingerprint) {
+				return
+			}
+		}
+		result = append(result, rootFingerprint)
+	}
+	for _, config := range configs {
+		switch {
+		case config.BitcoinSimple != nil:
+			add(config.BitcoinSimple.KeyInfo.RootFingerprint)
+		case config.BitcoinMultisig != nil:
+			for _, rootFingerprint := range config.BitcoinMultisig.RootFingerprints() {
+				add(rootFingerprint)
+			}
+		case config.EthereumSimple != nil:
+			add(config.EthereumSimple.KeyInfo.RootFingerprint)
+		}
+	}
+	return result
+}
+
 // ContainsRootFingerprint returns true if the rootFingerprint is present in one of the configurations.
 func (configs Configurations) ContainsRootFingerprint(rootFingerprint []byte) bool {
 	for _, config := range configs {
+		if config.BitcoinMultisig != nil && config.BitcoinMultisig.KeyIndex(rootFingerprint) != -1 {
+			return true
+		}
 		if config.BitcoinSimple != nil {
 			if bytes.Equal(config.BitcoinSimple.KeyInfo.RootFingerprint, rootFingerprint) {
 				return true

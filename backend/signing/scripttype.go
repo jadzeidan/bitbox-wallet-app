@@ -2,7 +2,7 @@
 
 package signing
 
-// ScriptType indicates which type of output should be produced in case of singlesig.
+// ScriptType indicates which type of output should be produced.
 type ScriptType string
 
 const (
@@ -17,4 +17,8 @@ const (
 
 	// ScriptTypeP2TR is a BIP-86 segwit v1 PayToTaproot output.
 	ScriptTypeP2TR ScriptType = "p2tr"
+
+	// ScriptTypeP2WSH is a segwit v0 PayToWitnessScriptHash output. It is used by multisig
+	// configurations.
+	ScriptTypeP2WSH ScriptType = "p2wsh"
 )
