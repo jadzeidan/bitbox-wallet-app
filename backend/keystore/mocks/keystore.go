@@ -23,6 +23,9 @@ var _ keystore.Keystore = &KeystoreMock{}
 //
 //		// make and configure a mocked keystore.Keystore
 //		mockedKeystore := &KeystoreMock{
+//			BTCMultisigRegisteredFunc: func(coinMoqParam coin.Coin, bitcoinMultisig *signing.BitcoinMultisig) (bool, error) {
+//				panic("mock out the BTCMultisigRegistered method")
+//			},
 //			BTCXPubsFunc: func(coinMoqParam coin.Coin, absoluteKeypaths []signing.AbsoluteKeypath) ([]*hdkeychain.ExtendedKey, error) {
 //				panic("mock out the BTCXPubs method")
 //			},
@@ -49,6 +52,9 @@ var _ keystore.Keystore = &KeystoreMock{}
 //			},
 //			ObserveFunc: func(fn func(observable.Event)) func() {
 //				panic("mock out the Observe method")
+//			},
+//			RegisterBTCMultisigFunc: func(coinInstance coin.Coin, multisig *signing.BitcoinMultisig, name string) error {
+//				panic("mock out the RegisterBTCMultisig method")
 //			},
 //			RootFingerprintFunc: func() ([]byte, error) {
 //				panic("mock out the RootFingerprint method")
@@ -99,6 +105,9 @@ var _ keystore.Keystore = &KeystoreMock{}
 //
 //	}
 type KeystoreMock struct {
+	// BTCMultisigRegisteredFunc mocks the BTCMultisigRegistered method.
+	BTCMultisigRegisteredFunc func(coinMoqParam coin.Coin, bitcoinMultisig *signing.BitcoinMultisig) (bool, error)
+
 	// BTCXPubsFunc mocks the BTCXPubs method.
 	BTCXPubsFunc func(coinMoqParam coin.Coin, absoluteKeypaths []signing.AbsoluteKeypath) ([]*hdkeychain.ExtendedKey, error)
 
@@ -125,6 +134,9 @@ type KeystoreMock struct {
 
 	// ObserveFunc mocks the Observe method.
 	ObserveFunc func(fn func(observable.Event)) func()
+
+	// RegisterBTCMultisigFunc mocks the RegisterBTCMultisig method.
+	RegisterBTCMultisigFunc func(coinInstance coin.Coin, multisig *signing.BitcoinMultisig, name string) error
 
 	// RootFingerprintFunc mocks the RootFingerprint method.
 	RootFingerprintFunc func() ([]byte, error)
@@ -170,6 +182,13 @@ type KeystoreMock struct {
 
 	// calls tracks calls to the methods.
 	calls struct {
+		// BTCMultisigRegistered holds details about calls to the BTCMultisigRegistered method.
+		BTCMultisigRegistered []struct {
+			// CoinMoqParam is the coinMoqParam argument value.
+			CoinMoqParam coin.Coin
+			// BitcoinMultisig is the bitcoinMultisig argument value.
+			BitcoinMultisig *signing.BitcoinMultisig
+		}
 		// BTCXPubs holds details about calls to the BTCXPubs method.
 		BTCXPubs []struct {
 			// CoinMoqParam is the coinMoqParam argument value.
@@ -210,6 +229,15 @@ type KeystoreMock struct {
 		Observe []struct {
 			// Fn is the fn argument value.
 			Fn func(observable.Event)
+		}
+		// RegisterBTCMultisig holds details about calls to the RegisterBTCMultisig method.
+		RegisterBTCMultisig []struct {
+			// CoinInstance is the coinInstance argument value.
+			CoinInstance coin.Coin
+			// Multisig is the multisig argument value.
+			Multisig *signing.BitcoinMultisig
+			// Name is the name argument value.
+			Name string
 		}
 		// RootFingerprint holds details about calls to the RootFingerprint method.
 		RootFingerprint []struct {
@@ -298,6 +326,7 @@ type KeystoreMock struct {
 			Configuration *signing.Configuration
 		}
 	}
+	lockBTCMultisigRegistered        sync.RWMutex
 	lockBTCXPubs                     sync.RWMutex
 	lockCanSignMessage               sync.RWMutex
 	lockCanVerifyAddress             sync.RWMutex
@@ -307,6 +336,7 @@ type KeystoreMock struct {
 	lockFeatures                     sync.RWMutex
 	lockName                         sync.RWMutex
 	lockObserve                      sync.RWMutex
+	lockRegisterBTCMultisig          sync.RWMutex
 	lockRootFingerprint              sync.RWMutex
 	lockSignBTCMessage               sync.RWMutex
 	lockSignETHMessage               sync.RWMutex
@@ -321,6 +351,42 @@ type KeystoreMock struct {
 	lockVerifyAddressBTC             sync.RWMutex
 	lockVerifyAddressETH             sync.RWMutex
 	lockVerifyExtendedPublicKey      sync.RWMutex
+}
+
+// BTCMultisigRegistered calls BTCMultisigRegisteredFunc.
+func (mock *KeystoreMock) BTCMultisigRegistered(coinMoqParam coin.Coin, bitcoinMultisig *signing.BitcoinMultisig) (bool, error) {
+	if mock.BTCMultisigRegisteredFunc == nil {
+		panic("KeystoreMock.BTCMultisigRegisteredFunc: method is nil but Keystore.BTCMultisigRegistered was just called")
+	}
+	callInfo := struct {
+		CoinMoqParam    coin.Coin
+		BitcoinMultisig *signing.BitcoinMultisig
+	}{
+		CoinMoqParam:    coinMoqParam,
+		BitcoinMultisig: bitcoinMultisig,
+	}
+	mock.lockBTCMultisigRegistered.Lock()
+	mock.calls.BTCMultisigRegistered = append(mock.calls.BTCMultisigRegistered, callInfo)
+	mock.lockBTCMultisigRegistered.Unlock()
+	return mock.BTCMultisigRegisteredFunc(coinMoqParam, bitcoinMultisig)
+}
+
+// BTCMultisigRegisteredCalls gets all the calls that were made to BTCMultisigRegistered.
+// Check the length with:
+//
+//	len(mockedKeystore.BTCMultisigRegisteredCalls())
+func (mock *KeystoreMock) BTCMultisigRegisteredCalls() []struct {
+	CoinMoqParam    coin.Coin
+	BitcoinMultisig *signing.BitcoinMultisig
+} {
+	var calls []struct {
+		CoinMoqParam    coin.Coin
+		BitcoinMultisig *signing.BitcoinMultisig
+	}
+	mock.lockBTCMultisigRegistered.RLock()
+	calls = mock.calls.BTCMultisigRegistered
+	mock.lockBTCMultisigRegistered.RUnlock()
+	return calls
 }
 
 // BTCXPubs calls BTCXPubsFunc.
@@ -596,6 +662,46 @@ func (mock *KeystoreMock) ObserveCalls() []struct {
 	mock.lockObserve.RLock()
 	calls = mock.calls.Observe
 	mock.lockObserve.RUnlock()
+	return calls
+}
+
+// RegisterBTCMultisig calls RegisterBTCMultisigFunc.
+func (mock *KeystoreMock) RegisterBTCMultisig(coinInstance coin.Coin, multisig *signing.BitcoinMultisig, name string) error {
+	if mock.RegisterBTCMultisigFunc == nil {
+		panic("KeystoreMock.RegisterBTCMultisigFunc: method is nil but Keystore.RegisterBTCMultisig was just called")
+	}
+	callInfo := struct {
+		CoinInstance coin.Coin
+		Multisig     *signing.BitcoinMultisig
+		Name         string
+	}{
+		CoinInstance: coinInstance,
+		Multisig:     multisig,
+		Name:         name,
+	}
+	mock.lockRegisterBTCMultisig.Lock()
+	mock.calls.RegisterBTCMultisig = append(mock.calls.RegisterBTCMultisig, callInfo)
+	mock.lockRegisterBTCMultisig.Unlock()
+	return mock.RegisterBTCMultisigFunc(coinInstance, multisig, name)
+}
+
+// RegisterBTCMultisigCalls gets all the calls that were made to RegisterBTCMultisig.
+// Check the length with:
+//
+//	len(mockedKeystore.RegisterBTCMultisigCalls())
+func (mock *KeystoreMock) RegisterBTCMultisigCalls() []struct {
+	CoinInstance coin.Coin
+	Multisig     *signing.BitcoinMultisig
+	Name         string
+} {
+	var calls []struct {
+		CoinInstance coin.Coin
+		Multisig     *signing.BitcoinMultisig
+		Name         string
+	}
+	mock.lockRegisterBTCMultisig.RLock()
+	calls = mock.calls.RegisterBTCMultisig
+	mock.lockRegisterBTCMultisig.RUnlock()
 	return calls
 }
 

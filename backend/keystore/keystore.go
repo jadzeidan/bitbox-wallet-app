@@ -126,6 +126,16 @@ type Keystore interface {
 	// Please note that this is only supported if the keystore has a secure output channel.
 	VerifyAddressETH(*signing.Configuration, coin.Coin) error
 
+	// BTCMultisigRegistered reports whether the multisig account is registered on the keystore.
+	// A keystore only displays addresses and signs transactions of registered multisig accounts.
+	// The keystore must hold one of the keys of the account.
+	BTCMultisigRegistered(coin.Coin, *signing.BitcoinMultisig) (bool, error)
+
+	// RegisterBTCMultisig registers the multisig account on the keystore under the given name.
+	// The user confirms the name, the threshold and the keys of all cosigners on the keystore.
+	// Returns errp.ErrUserAbort if the user aborts.
+	RegisterBTCMultisig(coinInstance coin.Coin, multisig *signing.BitcoinMultisig, name string) error
+
 	// CanVerifyExtendedPublicKey returns whether the keystore supports to output an xpub/zpub/tbup/ypub securely.
 	CanVerifyExtendedPublicKey() bool
 

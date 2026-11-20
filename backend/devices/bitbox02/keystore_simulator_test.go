@@ -681,6 +681,102 @@ func TestSimulatorVerifyAddressBTC(t *testing.T) {
 	})
 }
 
+// A 2-of-3 multisig account made of the simulator's key and two foreign keys is unregistered at
+// first and registered after RegisterBTCMultisig. The device then derives the same address as the
+// app and displays it for verification.
+func TestSimulatorBTCMultisig(t *testing.T) {
+	testInitializedSimulators(t, func(t *testing.T, device *Device, stdOut *bytes.Buffer) {
+		t.Helper()
+
+		keypath := mustKeypath("m/48'/0'/0'/2'")
+		mustXpub := func(xpubStr string) *hdkeychain.ExtendedKey {
+			xpub, err := hdkeychain.NewKeyFromString(xpubStr)
+			require.NoError(t, err)
+			return xpub
+		}
+		ourXpubStr, err := device.BTCXPub(
+			messages.BTCCoin_BTC, keypath.ToUInt32(), messages.BTCPubRequest_XPUB, false)
+		require.NoError(t, err)
+		rootFingerprint, err := device.RootFingerprint()
+		require.NoError(t, err)
+
+		configuration, err := signing.NewBitcoinMultisigConfiguration(2, []signing.KeyInfo{
+			{
+				RootFingerprint:   []byte{0x11, 0x11, 0x11, 0x11},
+				AbsoluteKeypath:   keypath,
+				ExtendedPublicKey: mustXpub("xpub6FEZ9Bv73h1vnE4TJG4QFj2RPXJhhsPbnXgFyH3ErLvpcZrDcynY65bhWga8PazWHLSLi23PoBhGcLcYW6JRiJ12zXZ9Aop4LbAqsS3gtcy"),
+			},
+			{
+				RootFingerprint:   rootFingerprint,
+				AbsoluteKeypath:   keypath,
+				ExtendedPublicKey: mustXpub(ourXpubStr),
+			},
+			{
+				RootFingerprint:   []byte{0x33, 0x33, 0x33, 0x33},
+				AbsoluteKeypath:   keypath,
+				ExtendedPublicKey: mustXpub("xpub6EGAio99SxruuNxoBtG4fbYx3xM8fs7wjYJLRNcUg7UQin3LTANQiUYyb3RLjZ2EAyLsQBrtbNENUGh3oWzjHtgfQ3mtjPNFgNMronzTTVR"),
+			},
+		})
+		require.NoError(t, err)
+		multisig := configuration.BitcoinMultisig
+		ks := device.Keystore()
+
+		registered, err := ks.BTCMultisigRegistered(coinBTC, multisig)
+		require.NoError(t, err)
+		require.False(t, registered)
+
+		require.NoError(t, ks.RegisterBTCMultisig(coinBTC, multisig, "Test vault"))
+
+		registered, err = ks.BTCMultisigRegistered(coinBTC, multisig)
+		require.NoError(t, err)
+		require.True(t, registered)
+
+		for _, derivation := range []types.Derivation{
+			{Change: false, AddressIndex: 0},
+			{Change: false, AddressIndex: 7},
+			{Change: true, AddressIndex: 3},
+		} {
+			expectedAddress := addresses.NewAccountAddress(
+				configuration, derivation, network, log).EncodeAddress()
+
+			scriptConfig, accountKeypath, err := ks.(*keystore).btcMultisigScriptConfig(multisig)
+			require.NoError(t, err)
+			addressKeypath := accountKeypath.
+				Child(derivation.SimpleChainIndex(), false).
+				Child(derivation.AddressIndex, false)
+			deviceAddress, err := device.BTCAddress(
+				messages.BTCCoin_BTC, addressKeypath.ToUInt32(), scriptConfig, false)
+			require.NoError(t, err)
+			require.Equal(t, expectedAddress, deviceAddress)
+
+			displayedAddress := expectedAddress
+			if device.Version().AtLeast(semver.NewSemVer(9, 26, 0)) {
+				// The address is displayed in groups of four characters.
+				var groups []string
+				for start := 0; start < len(expectedAddress); start += 4 {
+					groups = append(groups, expectedAddress[start:min(start+4, len(expectedAddress))])
+				}
+				displayedAddress = strings.Join(groups, " ")
+			}
+			stdOut.Truncate(0)
+			require.NoError(t, ks.VerifyAddressBTC(configuration, derivation, coinBTC))
+			require.Eventually(t,
+				func() bool { return strings.Contains(stdOut.String(), displayedAddress) },
+				time.Second, 10*time.Millisecond)
+		}
+
+		// A keystore that does not hold one of the keys cannot use the account.
+		foreign, err := signing.NewBitcoinMultisigConfiguration(2, []signing.KeyInfo{
+			multisig.Keys[0],
+			multisig.Keys[2],
+		})
+		require.NoError(t, err)
+		_, err = ks.BTCMultisigRegistered(coinBTC, foreign.BitcoinMultisig)
+		require.Error(t, err)
+		require.Error(t, ks.RegisterBTCMultisig(coinBTC, foreign.BitcoinMultisig, "Test vault"))
+	})
+}
+
 func TestSimulatorVerifyAddressETH(t *testing.T) {
 	testInitializedSimulators(t, func(t *testing.T, device *Device, stdOut *bytes.Buffer) {
 		t.Helper()

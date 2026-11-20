@@ -155,6 +155,15 @@ func (keystore *keystore) SupportsAccount(coin coinpkg.Coin, meta interface{}) b
 				return false
 			}
 		}
+		if scriptType == signing.ScriptTypeP2WSH {
+			// Multisig accounts are only offered for Bitcoin.
+			switch coin.Code() {
+			case coinpkg.CodeBTC, coinpkg.CodeTBTC, coinpkg.CodeRBTC:
+				return true
+			default:
+				return false
+			}
+		}
 		return scriptType != signing.ScriptTypeP2PKH
 	default:
 		return true
@@ -185,6 +194,26 @@ func (keystore *keystore) VerifyAddressBTC(
 	if !canVerifyAddress {
 		panic("CanVerifyAddress must be true")
 	}
+	if multisig := accountConfiguration.BitcoinMultisig; multisig != nil {
+		scriptConfig, accountKeypath, err := keystore.btcMultisigScriptConfig(multisig)
+		if err != nil {
+			return err
+		}
+		keypath := accountKeypath.
+			Child(derivation.SimpleChainIndex(), false).
+			Child(derivation.AddressIndex, false)
+		_, err = keystore.device.BTCAddress(
+			btcMsgCoinMap[coin.Code()],
+			keypath.ToUInt32(),
+			scriptConfig,
+			true,
+		)
+		if firmware.IsErrorAbort(err) {
+			// No special action on user abort.
+			return nil
+		}
+		return err
+	}
 	if accountConfiguration.ScriptType() == signing.ScriptTypeP2TR {
 		if err := keystore.requireFirmwareVersion(minTaprootVersion); err != nil {
 			return err
@@ -206,6 +235,68 @@ func (keystore *keystore) VerifyAddressBTC(
 	if firmware.IsErrorAbort(err) {
 		// No special action on user abort.
 		return nil
+	}
+	return err
+}
+
+// btcMultisigScriptConfig converts a multisig configuration to the BitBox02 script config. It also
+// returns the keypath of the account-level key that this keystore contributes.
+func (keystore *keystore) btcMultisigScriptConfig(
+	multisig *signing.BitcoinMultisig,
+) (*messages.BTCScriptConfig, signing.AbsoluteKeypath, error) {
+	if err := multisig.Validate(); err != nil {
+		return nil, nil, err
+	}
+	rootFingerprint, err := keystore.RootFingerprint()
+	if err != nil {
+		return nil, nil, err
+	}
+	ourKeyIndex := multisig.KeyIndex(rootFingerprint)
+	if ourKeyIndex == -1 {
+		return nil, nil, errp.New("the keystore does not hold a key of this multisig account")
+	}
+	xpubs := make([]string, len(multisig.Keys))
+	for index, key := range multisig.Keys {
+		xpubs[index] = key.ExtendedPublicKey.String()
+	}
+	scriptConfig, err := firmware.NewBTCScriptConfigMultisig(
+		uint32(multisig.Threshold), xpubs, uint32(ourKeyIndex))
+	if err != nil {
+		return nil, nil, err
+	}
+	return scriptConfig, multisig.Keys[ourKeyIndex].AbsoluteKeypath, nil
+}
+
+// BTCMultisigRegistered implements keystore.Keystore.
+func (keystore *keystore) BTCMultisigRegistered(
+	coin coinpkg.Coin, multisig *signing.BitcoinMultisig) (bool, error) {
+	msgCoin, ok := btcMsgCoinMap[coin.Code()]
+	if !ok {
+		return false, errp.New("unsupported coin")
+	}
+	scriptConfig, accountKeypath, err := keystore.btcMultisigScriptConfig(multisig)
+	if err != nil {
+		return false, err
+	}
+	return keystore.device.BTCIsScriptConfigRegistered(
+		msgCoin, scriptConfig, accountKeypath.ToUInt32())
+}
+
+// RegisterBTCMultisig implements keystore.Keystore.
+func (keystore *keystore) RegisterBTCMultisig(
+	coin coinpkg.Coin, multisig *signing.BitcoinMultisig, name string) error {
+	msgCoin, ok := btcMsgCoinMap[coin.Code()]
+	if !ok {
+		return errp.New("unsupported coin")
+	}
+	scriptConfig, accountKeypath, err := keystore.btcMultisigScriptConfig(multisig)
+	if err != nil {
+		return err
+	}
+	err = keystore.device.BTCRegisterScriptConfig(
+		msgCoin, scriptConfig, accountKeypath.ToUInt32(), name)
+	if firmware.IsErrorAbort(err) {
+		return errp.WithStack(errp.ErrUserAbort)
 	}
 	return err
 }
@@ -254,23 +345,40 @@ func (keystore *keystore) VerifyExtendedPublicKey(
 			return errp.New("unsupported coin")
 		}
 		var msgXPubType messages.BTCPubRequest_XPubType
-		switch specificCoin.Net().Net {
-		case chaincfg.MainNetParams.Net, ltc.MainNetParams.Net:
-			msgXPubTypes := map[signing.ScriptType]messages.BTCPubRequest_XPubType{
-				signing.ScriptTypeP2WPKHP2SH: messages.BTCPubRequest_YPUB,
-				signing.ScriptTypeP2WPKH:     messages.BTCPubRequest_ZPUB,
+		var keypath signing.AbsoluteKeypath
+		if multisig := configuration.BitcoinMultisig; multisig != nil {
+			// Display the key this keystore contributes, in the format the BitBox02 uses to list
+			// the cosigner keys when registering the multisig account.
+			var err error
+			_, keypath, err = keystore.btcMultisigScriptConfig(multisig)
+			if err != nil {
+				return err
 			}
-			msgXPubType, ok = msgXPubTypes[configuration.ScriptType()]
-			if !ok {
+			if specificCoin.Net().Net == chaincfg.MainNetParams.Net {
+				msgXPubType = messages.BTCPubRequest_CAPITAL_ZPUB
+			} else {
+				msgXPubType = messages.BTCPubRequest_CAPITAL_VPUB
+			}
+		} else {
+			keypath = configuration.AbsoluteKeypath()
+			switch specificCoin.Net().Net {
+			case chaincfg.MainNetParams.Net, ltc.MainNetParams.Net:
+				msgXPubTypes := map[signing.ScriptType]messages.BTCPubRequest_XPubType{
+					signing.ScriptTypeP2WPKHP2SH: messages.BTCPubRequest_YPUB,
+					signing.ScriptTypeP2WPKH:     messages.BTCPubRequest_ZPUB,
+				}
+				msgXPubType, ok = msgXPubTypes[configuration.ScriptType()]
+				if !ok {
+					msgXPubType = messages.BTCPubRequest_XPUB
+				}
+			case chaincfg.TestNet3Params.Net, ltc.TestNet4Params.Net:
+				msgXPubType = messages.BTCPubRequest_TPUB
+			default:
 				msgXPubType = messages.BTCPubRequest_XPUB
 			}
-		case chaincfg.TestNet3Params.Net, ltc.TestNet4Params.Net:
-			msgXPubType = messages.BTCPubRequest_TPUB
-		default:
-			msgXPubType = messages.BTCPubRequest_XPUB
 		}
 		_, err := keystore.device.BTCXPub(
-			msgCoin, configuration.AbsoluteKeypath().ToUInt32(), msgXPubType, true)
+			msgCoin, keypath.ToUInt32(), msgXPubType, true)
 		if firmware.IsErrorAbort(err) {
 			// No special action taken on user abort.
 			return nil

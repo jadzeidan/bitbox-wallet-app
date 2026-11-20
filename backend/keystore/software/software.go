@@ -182,6 +182,16 @@ func (keystore *Keystore) VerifyAddressBTC(*signing.Configuration, types.Derivat
 	return errp.New("The software-based keystore has no secure output to display the address.")
 }
 
+// BTCMultisigRegistered implements keystore.Keystore.
+func (keystore *Keystore) BTCMultisigRegistered(coinpkg.Coin, *signing.BitcoinMultisig) (bool, error) {
+	return false, errp.WithStack(keystorePkg.ErrUnsupportedFeature)
+}
+
+// RegisterBTCMultisig implements keystore.Keystore.
+func (keystore *Keystore) RegisterBTCMultisig(coinpkg.Coin, *signing.BitcoinMultisig, string) error {
+	return errp.WithStack(keystorePkg.ErrUnsupportedFeature)
+}
+
 // VerifyAddressETH implements keystore.Keystore.
 func (keystore *Keystore) VerifyAddressETH(*signing.Configuration, coinpkg.Coin) error {
 	return errp.New("The software-based keystore has no secure output to display the address.")
