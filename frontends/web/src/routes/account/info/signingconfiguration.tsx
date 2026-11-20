@@ -3,7 +3,7 @@
 import { useState, useEffect, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation } from 'wouter';
-import { AccountCode, TAccount, TAmountWithConversions, TBitcoinSimple, TEthereumSimple, TSigningConfiguration, verifyXPub, getBalance } from '@/api/account';
+import { AccountCode, TAccount, TAmountWithConversions, TBitcoinSimple, TEthereumSimple, TSimpleSigningConfiguration, verifyXPub, getBalance } from '@/api/account';
 import { getScriptName } from '@/routes/account/utils';
 import { isBitcoinBased, isEthereumBased } from '@/utils/coin';
 import { alertUser } from '@/components/alert/Alert';
@@ -20,7 +20,7 @@ import style from './info.module.css';
 
 type TProps = {
   account: TAccount;
-  info: TSigningConfiguration;
+  info: TSimpleSigningConfiguration;
   code: AccountCode;
   signingConfigIndex: number;
   children: ReactNode;

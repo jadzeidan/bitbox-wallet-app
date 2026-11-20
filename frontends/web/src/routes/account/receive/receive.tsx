@@ -10,6 +10,8 @@ import { useEthAccountActivity } from '@/hooks/account-activity';
 import { UseBackButton } from '@/hooks/backbutton';
 import * as accountApi from '@/api/account';
 import { setAccountReceiveScriptType } from '@/api/backend';
+import { registerVault } from '@/api/vault';
+import { getVaultErrorMessage } from '@/routes/account/add/vault/utils';
 import { alertUser } from '@/components/alert/Alert';
 import { getScriptName } from '@/routes/account/utils';
 import { isEthereumBased } from '@/utils/coin';
@@ -219,7 +221,19 @@ export const Receive = () => {
     try {
       const addressesAtIndex = receiveAddresses[addressesIndex] as accountApi.TReceiveAddressList;
       const address = addressesAtIndex.addresses[activeIndex] as accountApi.TReceiveAddress;
-      const result = await accountApi.verifyAddress(code, address.addressID);
+      let result = await accountApi.verifyAddress(code, address.addressID);
+      if (!result.success && result.errorCode === 'multisigNotRegistered') {
+        // A BitBox02 only shows addresses of vaults registered on it. Register the vault, where
+        // the user confirms its name and keys on the device, then verify the address.
+        const registered = await registerVault(code);
+        if (!registered.success) {
+          if (registered.errorCode !== 'userAbort') {
+            alertUser(getVaultErrorMessage(t, registered));
+          }
+          return;
+        }
+        result = await accountApi.verifyAddress(code, address.addressID);
+      }
       if (!result.success) {
         if (result.errorCode === 'firmwareUpgradeRequired') {
           setFirmwareUpgradeRequired(true);

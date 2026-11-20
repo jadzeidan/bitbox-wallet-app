@@ -14,6 +14,7 @@ import { View, ViewContent } from '@/components/view/view';
 import { BitcoinBasedAccountInfoGuide } from './guide';
 import { DesktopBackButton } from '@/components/backbutton/backbutton';
 import { SigningConfiguration } from './signingconfiguration';
+import { VaultDetails } from './vault-details';
 import style from './info.module.css';
 
 export const getDefaultSigningConfigurationIndex = (
@@ -91,7 +92,16 @@ export const XPubDetail = () => {
                   <DesktopBackButton enableEsc>{t('button.back')}</DesktopBackButton>
                 </>
               )}
-              {config && (
+              {config?.bitcoinMultisig !== undefined && (
+                <div className={style.detailCard}>
+                  <VaultDetails code={code} multisig={config.bitcoinMultisig}>
+                    <DesktopBackButton enableEsc>
+                      {t('button.back')}
+                    </DesktopBackButton>
+                  </VaultDetails>
+                </div>
+              )}
+              {config && config.bitcoinMultisig === undefined && (
                 <div className={style.detailCard}>
                   {(config?.bitcoinSimple !== undefined && numberOfXPubs > 1) && (
                     <p>

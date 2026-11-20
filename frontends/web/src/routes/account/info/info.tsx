@@ -83,7 +83,7 @@ export const Info = () => {
   };
 
   const isBtcBased = isBitcoinBased(account.coinCode);
-  const canSignMessage = isMessageSigningSupported(account.coinCode);
+  const canSignMessage = isMessageSigningSupported(account.coinCode) && !account.isVault;
 
   return (
     <Main>

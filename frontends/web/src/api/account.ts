@@ -48,6 +48,8 @@ export type TAccountBase = {
   name: string;
   receiveScriptType?: ScriptType;
   isToken: boolean;
+  // True for vault accounts, which need two of three BitBox02s to spend.
+  isVault?: boolean;
 };
 
 export type TAccount = TAccountBase & {
@@ -172,13 +174,29 @@ export type TEthereumSimple = {
   keyInfo: TKeyInfo;
 };
 
-export type TSigningConfiguration = {
+export type TBitcoinMultisig = {
+  threshold: number;
+  keys: TKeyInfo[];
+  descriptor: string;
+};
+
+export type TSimpleSigningConfiguration = {
   bitcoinSimple: TBitcoinSimple;
+  bitcoinMultisig?: never;
   ethereumSimple?: never;
 } | {
   bitcoinSimple?: never;
+  bitcoinMultisig?: never;
   ethereumSimple: TEthereumSimple;
 };
+
+export type TMultisigSigningConfiguration = {
+  bitcoinSimple?: never;
+  bitcoinMultisig: TBitcoinMultisig;
+  ethereumSimple?: never;
+};
+
+export type TSigningConfiguration = TSimpleSigningConfiguration | TMultisigSigningConfiguration;
 
 export type TSigningConfigurationList = null | {
   signingConfigurations: TSigningConfiguration[];
@@ -491,7 +509,11 @@ export const getFeeTargetList = (code: AccountCode): Promise<TFeeTargetList> => 
 };
 
 export const verifyAddress = (code: AccountCode, addressID: string): Promise<
-  { success: true } | { success: false; errorCode?: 'firmwareUpgradeRequired'; errorMessage?: string }
+  { success: true } | {
+    success: false;
+    errorCode?: 'firmwareUpgradeRequired' | 'multisigNotRegistered';
+    errorMessage?: string;
+  }
 > => {
   return apiPost(`account/${code}/verify-address`, addressID);
 };

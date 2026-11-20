@@ -224,7 +224,8 @@ const RemountAccount = ({
     code,
     accountDataLoaded: hasDataLoaded,
     coinCode: account.coinCode,
-    canSend: balance && balance.hasAvailable,
+    // Spending from a vault is not available.
+    canSend: balance && balance.hasAvailable && !account.isVault,
     exchangeSupported,
     account
   };
