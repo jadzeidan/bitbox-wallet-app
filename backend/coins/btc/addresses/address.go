@@ -3,7 +3,10 @@
 package addresses
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"fmt"
+	"slices"
 
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/coins/btc/blockchain"
 	"github.com/BitBoxSwiss/bitbox-wallet-app/backend/coins/btc/types"
@@ -33,15 +36,78 @@ type AccountAddress struct {
 
 	// AccountConfiguration is the account level configuration from which this address was derived.
 	AccountConfiguration *signing.Configuration
-	// PublicKey is the public key of a single-sig address.
+	// PublicKey is the public key of a single-sig address. It is nil for multisig addresses.
 	PublicKey  *btcec.PublicKey
 	Derivation types.Derivation
 
 	// redeemScript stores the redeem script of a BIP16 P2SH output or nil if address type is not
 	// P2SH.
 	RedeemScript []byte
+	// WitnessScript stores the witness script of a P2WSH output or nil if the address type is not
+	// P2WSH.
+	WitnessScript []byte
 
 	log *logrus.Entry
+}
+
+// multisigWitnessScript returns the witness script of a multisig address:
+// `threshold <public keys> n OP_CHECKMULTISIG`. The public keys are derived from the account-level
+// key of each cosigner and sorted lexicographically, as defined for sortedmulti() descriptors.
+func multisigWitnessScript(
+	multisig *signing.BitcoinMultisig,
+	relativeKeypath signing.RelativeKeypath,
+) ([]byte, error) {
+	if err := multisig.Validate(); err != nil {
+		return nil, err
+	}
+	publicKeys := make([][]byte, len(multisig.Keys))
+	for index, key := range multisig.Keys {
+		derivedXpub, err := relativeKeypath.Derive(key.ExtendedPublicKey)
+		if err != nil {
+			return nil, err
+		}
+		publicKey, err := derivedXpub.ECPubKey()
+		if err != nil {
+			return nil, err
+		}
+		publicKeys[index] = publicKey.SerializeCompressed()
+	}
+	slices.SortFunc(publicKeys, bytes.Compare)
+
+	builder := txscript.NewScriptBuilder().AddInt64(int64(multisig.Threshold))
+	for _, publicKey := range publicKeys {
+		builder.AddData(publicKey)
+	}
+	return builder.
+		AddInt64(int64(len(publicKeys))).
+		AddOp(txscript.OP_CHECKMULTISIG).
+		Script()
+}
+
+// newMultisigAccountAddress creates a new P2WSH multisig account address.
+func newMultisigAccountAddress(
+	accountConfiguration *signing.Configuration,
+	derivation types.Derivation,
+	relativeKeypath signing.RelativeKeypath,
+	net *chaincfg.Params,
+	log *logrus.Entry,
+) *AccountAddress {
+	witnessScript, err := multisigWitnessScript(accountConfiguration.BitcoinMultisig, relativeKeypath)
+	if err != nil {
+		log.WithError(err).Panic("Failed to create the multisig witness script.")
+	}
+	witnessScriptHash := sha256.Sum256(witnessScript)
+	address, err := addresspkg.NewAddressWitnessScriptHash(witnessScriptHash[:], net)
+	if err != nil {
+		log.WithError(err).Panic("Failed to get p2wsh addr. from witness script hash.")
+	}
+	return &AccountAddress{
+		Address:              address,
+		AccountConfiguration: accountConfiguration,
+		Derivation:           derivation,
+		WitnessScript:        witnessScript,
+		log:                  log,
+	}
 }
 
 // NewAccountAddress creates a new account address.
@@ -64,6 +130,9 @@ func NewAccountAddress(
 	relativeKeypath := signing.NewEmptyRelativeKeypath().
 		Child(derivation.SimpleChainIndex(), signing.NonHardened).
 		Child(derivation.AddressIndex, signing.NonHardened)
+	if accountConfiguration.IsMultisig() {
+		return newMultisigAccountAddress(accountConfiguration, derivation, relativeKeypath, net, log)
+	}
 	derivedXpub, err := relativeKeypath.Derive(accountConfiguration.ExtendedPublicKey())
 	if err != nil {
 		log.WithError(err).Panic("Failed to derive xpub.")
@@ -131,7 +200,8 @@ func (address *AccountAddress) EncodeForHumans() string {
 	return address.EncodeAddress()
 }
 
-// AbsoluteKeypath implements accounts.Address.
+// AbsoluteKeypath implements accounts.Address. Must not be called on multisig addresses, which
+// have one keypath per cosigner.
 func (address *AccountAddress) AbsoluteKeypath() signing.AbsoluteKeypath {
 	return address.AccountConfiguration.AbsoluteKeypath().
 		Child(address.Derivation.SimpleChainIndex(), false).
